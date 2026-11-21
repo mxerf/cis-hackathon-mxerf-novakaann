@@ -6,7 +6,10 @@ import { MobileWallet } from "./features/mirage/mobile-wallet.tsx";
 import { PhoneFrame } from "./features/mirage/phone-frame.tsx";
 import { PresenterBar } from "./features/mirage/presenter-bar.tsx";
 import { useMirageSync } from "./features/mirage/use-mirage-sync.ts";
+import { WalletGuardian } from "./features/mirage/wallet-guardian.tsx";
 import { getUiCopy } from "./lib/ui-copy.ts";
+
+export type PhonePersona = "victim" | "guardian";
 
 function computeStageScale(): number {
   return Math.max(
@@ -41,6 +44,7 @@ export function App() {
   const [stageScale, setStageScale] = useState<number>(() => computeStageScale());
   const [useLiveAi, setUseLiveAi] = useState(true);
   const [callerVoice, setCallerVoice] = useState(false);
+  const [phonePersona, setPhonePersona] = useState<PhonePersona>("victim");
   const [revealedSessionId, setRevealedSessionId] = useState<string | null>(null);
   const [blockedSessionId, setBlockedSessionId] = useState<string | null>(null);
 
@@ -70,6 +74,7 @@ export function App() {
     if (lastSessionIdRef.current !== state.sessionId) {
       lastSessionIdRef.current = state.sessionId;
       spokenIdsRef.current = new Set(state.call.transcript.map((entry) => entry.id));
+      setPhonePersona("victim");
       if ("speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
@@ -108,6 +113,7 @@ export function App() {
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    setPhonePersona("victim");
     setRevealedSessionId(null);
     setBlockedSessionId(null);
     void resetDemo();
@@ -118,12 +124,17 @@ export function App() {
       if ("speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
+      setPhonePersona("victim");
       setRevealedSessionId(null);
       setBlockedSessionId(null);
       void selectPreset(presetId);
     },
     [selectPreset],
   );
+
+  const handleToggleGuardianView = useCallback(() => {
+    setPhonePersona((prev) => (prev === "guardian" ? "victim" : "guardian"));
+  }, []);
 
   const handleInjectTranscript = useCallback(
     async (speaker: TranscriptSpeaker, text: string) => {
@@ -194,12 +205,14 @@ export function App() {
         isBusy={isBusy}
         useLiveAi={useLiveAi}
         callerVoice={callerVoice}
+        phonePersona={phonePersona}
         onSelectPreset={handleSelectPreset}
         onStartCall={() => void startCall()}
         onEndCall={() => void handleEndCall()}
         onReset={handleReset}
         onToggleLiveAi={setUseLiveAi}
         onToggleCallerVoice={handleToggleCallerVoice}
+        onChangePhonePersona={setPhonePersona}
         onSwitchLocale={(locale) => void switchLocale(locale)}
       />
 
@@ -215,30 +228,49 @@ export function App() {
             isAiPending={isAiPending}
             isRevealed={isRevealed}
             isCallerBlocked={isCallerBlocked}
+            phonePersona={phonePersona}
             onStartCall={startCall}
             onEndCall={handleEndCall}
             onUpdateSignals={updateSignals}
             onPlayNextChunk={() => playNextChunk(useLiveAi)}
             onPlayCue={handlePlayCue}
             onInjectTranscript={handleInjectTranscript}
+            onToggleGuardianView={handleToggleGuardianView}
           />
 
           <PhoneFrame>
-            <MobileWallet
-              key={state.sessionId}
-              state={state}
-              preset={preset}
-              isBusy={isBusy}
-              startUnlocked
-              onEndCall={handleEndCall}
-              onUpdateSignals={updateSignals}
-              onSubmitTransfer={submitTransfer}
-              onSendSupport={sendSupportMessage}
-              onRevealChange={(revealed) => setRevealedSessionId(revealed ? state.sessionId : null)}
-              onCallerBlockedChange={(blocked) =>
-                setBlockedSessionId(blocked ? state.sessionId : null)
-              }
-            />
+            <div
+              className={phonePersona === "guardian" ? "hidden" : "flex min-h-0 flex-1 flex-col"}
+            >
+              <MobileWallet
+                key={state.sessionId}
+                state={state}
+                preset={preset}
+                isBusy={isBusy}
+                startUnlocked
+                onEndCall={handleEndCall}
+                onUpdateSignals={updateSignals}
+                onSubmitTransfer={submitTransfer}
+                onSendSupport={sendSupportMessage}
+                onRevealChange={(revealed) =>
+                  setRevealedSessionId(revealed ? state.sessionId : null)
+                }
+                onCallerBlockedChange={(blocked) =>
+                  setBlockedSessionId(blocked ? state.sessionId : null)
+                }
+              />
+            </div>
+
+            <div
+              className={phonePersona === "guardian" ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+            >
+              <WalletGuardian
+                key={state.sessionId}
+                state={state}
+                preset={preset}
+                onBackToVictim={() => setPhonePersona("victim")}
+              />
+            </div>
           </PhoneFrame>
         </div>
       </main>

@@ -32,12 +32,14 @@ export type MiragePanelProps = {
   isAiPending: boolean;
   isRevealed: boolean;
   isCallerBlocked: boolean;
+  phonePersona: "victim" | "guardian";
   onStartCall: () => Promise<void>;
   onEndCall: () => Promise<void>;
   onUpdateSignals: (patch: Partial<DetectionSignals>) => Promise<void>;
   onPlayNextChunk: () => Promise<void>;
   onPlayCue: (chunk: ScriptedTranscriptChunk) => Promise<void>;
   onInjectTranscript: (speaker: TranscriptSpeaker, text: string) => Promise<void>;
+  onToggleGuardianView: () => void;
 };
 
 function getSourceLabel(
@@ -91,12 +93,14 @@ export function MiragePanel({
   isAiPending,
   isRevealed,
   isCallerBlocked,
+  phonePersona,
   onStartCall,
   onEndCall,
   onUpdateSignals,
   onPlayNextChunk,
   onPlayCue,
   onInjectTranscript,
+  onToggleGuardianView,
 }: MiragePanelProps) {
   const copy = getUiCopy(state.locale);
   const [customLine, setCustomLine] = useState("");
@@ -496,13 +500,13 @@ export function MiragePanel({
       </div>
 
       {/* 3. Interactive OS Signal Toggles */}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <div className="mt-2 flex flex-nowrap items-center justify-between gap-1.5">
         <button
           type="button"
           disabled={isBusy}
           onClick={() => void (state.call.active ? onEndCall() : onStartCall())}
           aria-pressed={state.call.active}
-          className={`inline-flex h-[27px] items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition ${
+          className={`inline-flex h-[27px] flex-auto items-center justify-center gap-1 rounded-full border px-2 text-[10.5px] font-semibold whitespace-nowrap transition ${
             state.call.active
               ? "border-[var(--call-green)]/70 bg-[color-mix(in_srgb,var(--call-green)_16%,var(--card))] text-[var(--foreground)]"
               : inCooldown
@@ -510,7 +514,7 @@ export function MiragePanel({
                 : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           }`}
         >
-          <PhoneCall className="h-3 w-3" />
+          <PhoneCall className="h-3 w-3 flex-none" />
           {inCooldown ? copy.toggleCallCooldown : copy.toggleCallActive}
         </button>
 
@@ -519,15 +523,15 @@ export function MiragePanel({
           disabled={isBusy}
           onClick={() => void handleToggleUnverifiedCaller()}
           aria-pressed={signals.unverifiedCaller}
-          className={`inline-flex h-[27px] items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition ${
+          className={`inline-flex h-[27px] flex-auto items-center justify-center gap-1 rounded-full border px-2 text-[10.5px] font-semibold whitespace-nowrap transition ${
             signals.unverifiedCaller
               ? "border-[var(--primary)]/70 bg-[color-mix(in_oklch,var(--primary)_16%,var(--card))] text-[var(--foreground)]"
               : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           }`}
         >
-          <ShieldAlert className="h-3 w-3" />
+          <ShieldAlert className="h-3 w-3 flex-none" />
           {copy.toggleUnverifiedCaller}
-          <span className="mono text-[10px] opacity-75">+10%</span>
+          <span className="mono text-[9.5px] opacity-75">+10%</span>
         </button>
 
         <button
@@ -535,15 +539,15 @@ export function MiragePanel({
           disabled={isBusy}
           onClick={() => void handleToggleScreenShare()}
           aria-pressed={isScreenSharing}
-          className={`inline-flex h-[27px] items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition ${
+          className={`inline-flex h-[27px] flex-auto items-center justify-center gap-1 rounded-full border px-2 text-[10.5px] font-semibold whitespace-nowrap transition ${
             isScreenSharing
               ? "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_22%,var(--card))] text-[var(--foreground)]"
               : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           }`}
         >
-          <MonitorUp className="h-3 w-3" />
+          <MonitorUp className="h-3 w-3 flex-none" />
           {copy.toggleScreenShare}
-          <span className="mono text-[10px] opacity-75">+26%</span>
+          <span className="mono text-[9.5px] opacity-75">+26%</span>
         </button>
 
         <button
@@ -551,22 +555,16 @@ export function MiragePanel({
           disabled={isBusy}
           onClick={() => void handleToggleIbanPasted()}
           aria-pressed={signals.clipboardPasteDetected}
-          className={`inline-flex h-[27px] items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition ${
+          className={`inline-flex h-[27px] flex-auto items-center justify-center gap-1 rounded-full border px-2 text-[10.5px] font-semibold whitespace-nowrap transition ${
             signals.clipboardPasteDetected
               ? "border-[var(--primary)]/70 bg-[color-mix(in_oklch,var(--primary)_16%,var(--card))] text-[var(--foreground)]"
               : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           }`}
         >
-          <ClipboardPaste className="h-3 w-3" />
+          <ClipboardPaste className="h-3 w-3 flex-none" />
           {copy.toggleIbanPasted}
-          <span className="mono text-[10px] opacity-75">+12%</span>
+          <span className="mono text-[9.5px] opacity-75">+12%</span>
         </button>
-
-        {customerNotTold && (
-          <span className="inline-flex h-[27px] items-center rounded-full border border-[var(--primary)] bg-[var(--card)] px-2.5 text-[11px] font-semibold text-[var(--primary)]">
-            {copy.signalCustomerNotTold}
-          </span>
-        )}
       </div>
 
       {/* 4. Interactive Cue Deck + Custom Input + Compact Live Transcript */}
@@ -592,7 +590,7 @@ export function MiragePanel({
           </button>
         </div>
 
-        <div className="mirage-scroll mt-1.5 max-h-[120px] space-y-1 overflow-y-auto pr-0.5">
+        <div className="mirage-scroll mt-1.5 max-h-[144px] flex-none space-y-1 overflow-y-auto pr-0.5">
           {preset.scriptedChunks.map((chunk, idx) => {
             const isPlayed = playedTexts.has(chunk.text);
             const isNext = idx === state.scriptedChunkIndex;
@@ -661,7 +659,7 @@ export function MiragePanel({
 
         <div
           ref={transcriptRef}
-          className="mirage-scroll mt-1.5 max-h-[66px] min-h-[42px] overflow-y-auto rounded-[10px] border border-[var(--border)] bg-[var(--card)]/60 px-2.5 py-1.5"
+          className="mirage-scroll mt-1.5 min-h-0 flex-1 overflow-y-auto rounded-[10px] border border-[var(--border)] bg-[var(--card)]/60 px-2.5 py-1.5"
         >
           {state.call.transcript.length === 0 ? (
             <p className="text-[11px] text-[var(--muted-foreground)]">{copy.transcriptIdleHint}</p>
@@ -718,20 +716,35 @@ export function MiragePanel({
             </div>
           </div>
 
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10.5px] font-semibold ${
-              state.trustedAlertSent
-                ? "border-[var(--primary)]/60 bg-[color-mix(in_oklch,var(--primary)_14%,var(--card))] text-[var(--primary)]"
-                : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)]"
-            }`}
-          >
-            {state.trustedAlertSent ? (
-              <BellRing className="h-3.5 w-3.5" />
-            ) : (
-              <ShieldCheck className="h-3.5 w-3.5" />
+          <div className="flex flex-nowrap items-center justify-end gap-1.5">
+            {customerNotTold && (
+              <span className="inline-flex items-center rounded-full border border-[var(--primary)]/60 bg-[var(--card)] px-2 py-1 text-[10px] font-semibold whitespace-nowrap text-[var(--primary)]">
+                {copy.signalCustomerNotTold}
+              </span>
             )}
-            {state.trustedAlertSent ? copy.familyAlertSent : copy.familyAlertStandby}
-          </span>
+            <button
+              type="button"
+              onClick={onToggleGuardianView}
+              aria-pressed={phonePersona === "guardian"}
+              title={
+                phonePersona === "guardian" ? copy.familyAlertBackTip : copy.familyAlertOpenTip
+              }
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10.5px] font-semibold whitespace-nowrap transition hover:brightness-110 ${
+                phonePersona === "guardian"
+                  ? "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_24%,var(--card))] text-[var(--foreground)] ring-1 ring-[var(--primary)]/50"
+                  : state.trustedAlertSent
+                    ? "border-[var(--primary)]/60 bg-[color-mix(in_oklch,var(--primary)_14%,var(--card))] text-[var(--primary)]"
+                    : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              {state.trustedAlertSent ? (
+                <BellRing className="h-3.5 w-3.5" />
+              ) : (
+                <ShieldCheck className="h-3.5 w-3.5" />
+              )}
+              {state.trustedAlertSent ? copy.familyAlertSent : copy.familyAlertStandby}
+            </button>
+          </div>
         </div>
 
         <div className="mt-2 grid grid-cols-2 gap-2">

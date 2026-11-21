@@ -15,12 +15,14 @@ export type PresenterBarProps = {
   isBusy: boolean;
   useLiveAi: boolean;
   callerVoice: boolean;
+  phonePersona: "victim" | "guardian";
   onSelectPreset: (presetId: string) => void;
   onStartCall: () => void;
   onEndCall: () => void;
   onReset: () => void;
   onToggleLiveAi: (enabled: boolean) => void;
   onToggleCallerVoice: (enabled: boolean) => void;
+  onChangePhonePersona: (persona: "victim" | "guardian") => void;
   onSwitchLocale: (locale: Locale) => void;
 };
 
@@ -42,15 +44,18 @@ export function PresenterBar({
   isBusy,
   useLiveAi,
   callerVoice,
+  phonePersona,
   onSelectPreset,
   onStartCall,
   onEndCall,
   onReset,
   onToggleLiveAi,
   onToggleCallerVoice,
+  onChangePhonePersona,
   onSwitchLocale,
 }: PresenterBarProps) {
   const copy = getUiCopy(state.locale);
+  const hasGuardianAlert = state.trustedAlertSent || state.mode === "mirage";
   const effectivePresets: PresetSummary[] =
     presets.length > 0
       ? presets
@@ -65,7 +70,7 @@ export function PresenterBar({
         ];
 
   return (
-    <header className="flex h-[56px] w-full flex-none items-center gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--card)] px-4">
+    <header className="flex h-[56px] w-full flex-none items-center gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--card)] px-3">
       <span className="text-[11px] font-semibold tracking-[0.14em] whitespace-nowrap text-[var(--muted-foreground)] uppercase">
         {copy.caseTag}
       </span>
@@ -131,8 +136,8 @@ export function PresenterBar({
         {copy.reset}
       </button>
 
-      <div className="ml-auto flex items-center gap-2.5 pl-2">
-        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] font-medium whitespace-nowrap text-[var(--muted-foreground)] select-none">
+      <div className="ml-auto flex items-center gap-2 pl-1">
+        <label className="flex cursor-pointer items-center gap-1 text-[11.5px] font-medium whitespace-nowrap text-[var(--muted-foreground)] select-none">
           <input
             type="checkbox"
             checked={useLiveAi}
@@ -142,7 +147,7 @@ export function PresenterBar({
           {copy.liveHaikuLabel}
         </label>
 
-        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] font-medium whitespace-nowrap text-[var(--muted-foreground)] select-none">
+        <label className="flex cursor-pointer items-center gap-1 text-[11.5px] font-medium whitespace-nowrap text-[var(--muted-foreground)] select-none">
           <input
             type="checkbox"
             checked={callerVoice}
@@ -151,6 +156,42 @@ export function PresenterBar({
           />
           {copy.callerVoiceLabel}
         </label>
+
+        <div
+          role="group"
+          aria-label={copy.personaAriaLabel}
+          className="flex flex-none overflow-hidden rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--background)]/50"
+        >
+          <button
+            type="button"
+            aria-pressed={phonePersona === "victim"}
+            onClick={() => onChangePhonePersona("victim")}
+            className={`inline-flex h-[30px] items-center px-2 text-[11.5px] font-semibold whitespace-nowrap transition ${
+              phonePersona === "victim"
+                ? "bg-[var(--secondary)] text-[var(--foreground)]"
+                : "bg-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            {copy.personaVictim}
+          </button>
+          <button
+            type="button"
+            aria-pressed={phonePersona === "guardian"}
+            onClick={() => onChangePhonePersona("guardian")}
+            className={`inline-flex h-[30px] items-center gap-1 border-l border-[var(--border)] px-2 text-[11.5px] font-semibold whitespace-nowrap transition ${
+              phonePersona === "guardian"
+                ? "bg-[var(--secondary)] text-[var(--foreground)]"
+                : "bg-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            {copy.personaGuardian}
+            {hasGuardianAlert && (
+              <span className="mono inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[9.5px] leading-none font-bold text-[var(--primary-foreground)]">
+                1
+              </span>
+            )}
+          </button>
+        </div>
 
         <div className="flex overflow-hidden rounded-[var(--radius-sm)] border border-[var(--border)]">
           <button

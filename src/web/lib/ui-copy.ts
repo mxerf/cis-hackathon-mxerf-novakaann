@@ -14,6 +14,9 @@ export type UiCopy = {
   reset: string;
   liveHaikuLabel: string;
   callerVoiceLabel: string;
+  personaAriaLabel: string;
+  personaVictim: string;
+  personaGuardian: string;
   mobileLink: string;
   wsLive: string;
   wsOffline: string;
@@ -91,6 +94,8 @@ export type UiCopy = {
   muleAttempt2Tag: string;
   familyAlertSent: string;
   familyAlertStandby: string;
+  familyAlertOpenTip: string;
+  familyAlertBackTip: string;
   customerNotifiedNote: string;
   callerBlockedNote: string;
 
@@ -225,6 +230,45 @@ export type UiCopy = {
   toastNetworkError: string;
   checkingShort: string;
   vaultShort: string;
+  currentAccountTitle: string;
+  savingsVaultTitle: string;
+
+  guardianAppBrand: string;
+  guardianAppSubtitle: string;
+  guardianBackVictim: string;
+  guardianAllClearTitle: string;
+  guardianAllClearSub: string;
+  guardianLinkedProfile: string;
+  guardianRulesTitle: string;
+  guardianRuleAutoShield: string;
+  guardianRuleAutoShieldVal: string;
+  guardianRuleMasking: string;
+  guardianRuleMaskingVal: string;
+  guardianRuleAlert: string;
+  guardianRuleAlertVal: string;
+  guardianPushMeta: string;
+  guardianPushNow: string;
+  guardianPushTitle: string;
+  guardianPushBody: string;
+  guardianProtectedBalance: string;
+  guardianLeftBankBadge: string;
+  guardianIncidentTitle: string;
+  guardianRiskScoreLabel: string;
+  guardianAlgoPrefix: string;
+  guardianAiPrefix: string;
+  guardianStatusLabel: string;
+  guardianStatusLive: string;
+  guardianStatusEnded: string;
+  guardianMulesLabel: string;
+  guardianMulesWaiting: string;
+  guardianMuleCb412: string;
+  guardianMuleDecoy: string;
+  guardianCallMom: string;
+  guardianCallingMom: string;
+  guardianHold24h: string;
+  guardianHold24hActive: string;
+  guardianFalseAlarm: string;
+  guardianFalseAlarmToast: string;
 };
 
 const EN_COPY: UiCopy = {
@@ -241,6 +285,9 @@ const EN_COPY: UiCopy = {
   reset: "Reset",
   liveHaikuLabel: "Live Haiku 5.5",
   callerVoiceLabel: "Caller voice",
+  personaAriaLabel: "Phone persona",
+  personaVictim: "Victim",
+  personaGuardian: "Guardian",
   mobileLink: "/mobile",
   wsLive: "WS Live",
   wsOffline: "Offline",
@@ -261,11 +308,11 @@ const EN_COPY: UiCopy = {
   thresholdNotchLabel: "65% MIRAGE",
   aiAnalyzingBadge: "ANALYZING…",
   osSignalsLabel: "OS signals",
-  toggleCallActive: "Call Active",
+  toggleCallActive: "Call",
   toggleCallCooldown: "Cooldown",
-  toggleUnverifiedCaller: "Unverified Caller",
-  toggleScreenShare: "Screen Share",
-  toggleIbanPasted: "IBAN Pasted",
+  toggleUnverifiedCaller: "Unverified",
+  toggleScreenShare: "Screen",
+  toggleIbanPasted: "IBAN",
   cueDeckTitle: "Case cue deck",
   cuePlayNext: "Play next",
   cueAllPlayed: "All played",
@@ -321,6 +368,8 @@ const EN_COPY: UiCopy = {
   muleAttempt2Tag: "Decoy Settled",
   familyAlertSent: "Family Alert: Sent",
   familyAlertStandby: "Family Alert: Standby",
+  familyAlertOpenTip: "Switch phone to Family Guardian view",
+  familyAlertBackTip: "Switch phone back to Victim view",
   customerNotifiedNote: "Customer told after the call and screen sharing ended.",
   callerBlockedNote: "Caller number blocked.",
 
@@ -456,6 +505,45 @@ const EN_COPY: UiCopy = {
   toastNetworkError: "Connection error — please try again",
   checkingShort: "Everyday",
   vaultShort: "Vault",
+  currentAccountTitle: "Current account",
+  savingsVaultTitle: "Savings vault",
+
+  guardianAppBrand: "nura bank",
+  guardianAppSubtitle: "Family Guardian",
+  guardianBackVictim: "Victim",
+  guardianAllClearTitle: "Protection active · All clear",
+  guardianAllClearSub: "Live call & screen-share shield standing by.",
+  guardianLinkedProfile: "Mom · Everyday + Vault",
+  guardianRulesTitle: "Protection rules",
+  guardianRuleAutoShield: "Mirage Auto-Shield",
+  guardianRuleAutoShieldVal: "≥ 65% risk",
+  guardianRuleMasking: "Screen-Share Masking",
+  guardianRuleMaskingVal: "Enabled",
+  guardianRuleAlert: "Instant Family Alert",
+  guardianRuleAlertVal: "In-App Push",
+  guardianPushMeta: "NURA BANK · FAMILY GUARDIAN",
+  guardianPushNow: "NOW",
+  guardianPushTitle: "Scam attempt intercepted",
+  guardianPushBody: "Mom's account was moved into Mirage sandbox. No real money left the bank.",
+  guardianProtectedBalance: "Protected balance",
+  guardianLeftBankBadge: "left bank",
+  guardianIncidentTitle: "Incident details",
+  guardianRiskScoreLabel: "Risk score",
+  guardianAlgoPrefix: "Algo",
+  guardianAiPrefix: "AI",
+  guardianStatusLabel: "Status",
+  guardianStatusLive: "Call still live · Mirage masking active",
+  guardianStatusEnded: "Call ended · Mom notified",
+  guardianMulesLabel: "Captured mule accounts",
+  guardianMulesWaiting: "Honeytrap armed · waiting for destination IBAN",
+  guardianMuleCb412: "CB-412",
+  guardianMuleDecoy: "Decoy",
+  guardianCallMom: "Call Mom on trusted line",
+  guardianCallingMom: "Calling Mom… (safe line)",
+  guardianHold24h: "Keep 24h outbound hold",
+  guardianHold24hActive: "24h safe hold enabled ✓",
+  guardianFalseAlarm: "Mark as trusted / false alarm",
+  guardianFalseAlarmToast: "Biometric verification required after call ends",
 };
 
 const RU_COPY: UiCopy = {
@@ -472,6 +560,9 @@ const RU_COPY: UiCopy = {
   reset: "Сброс",
   liveHaikuLabel: "Живой Haiku 5.5",
   callerVoiceLabel: "Голос",
+  personaAriaLabel: "Режим телефона",
+  personaVictim: "Клиент",
+  personaGuardian: "Близкий",
   mobileLink: "/mobile",
   wsLive: "WS активен",
   wsOffline: "Офлайн",
@@ -492,11 +583,11 @@ const RU_COPY: UiCopy = {
   thresholdNotchLabel: "65% МИРАЖ",
   aiAnalyzingBadge: "АНАЛИЗ…",
   osSignalsLabel: "Сигналы ОС",
-  toggleCallActive: "Звонок активен",
+  toggleCallActive: "Звонок",
   toggleCallCooldown: "Cooldown",
-  toggleUnverifiedCaller: "Неподтв. номер",
-  toggleScreenShare: "Показ экрана",
-  toggleIbanPasted: "Вставка IBAN",
+  toggleUnverifiedCaller: "Неизвест.",
+  toggleScreenShare: "Экран",
+  toggleIbanPasted: "IBAN",
   cueDeckTitle: "Реплики кейса",
   cuePlayNext: "След. фраза",
   cueAllPlayed: "Все сыграны",
@@ -552,6 +643,8 @@ const RU_COPY: UiCopy = {
   muleAttempt2Tag: "Мираж-чек",
   familyAlertSent: "Близкие: Уведомлены",
   familyAlertStandby: "Близкие: Ожидание",
+  familyAlertOpenTip: "Открыть экран доверенного лица (Family Guardian)",
+  familyAlertBackTip: "Вернуться к телефону клиента",
   customerNotifiedNote: "Клиенту сообщили после завершения звонка и показа экрана.",
   callerBlockedNote: "Номер звонящего заблокирован.",
 
@@ -687,6 +780,45 @@ const RU_COPY: UiCopy = {
   toastNetworkError: "Ошибка сети — попробуйте снова",
   checkingShort: "Текущий",
   vaultShort: "Сейф",
+  currentAccountTitle: "Текущий счёт",
+  savingsVaultTitle: "Сберегательный сейф",
+
+  guardianAppBrand: "nura bank",
+  guardianAppSubtitle: "Family Guardian",
+  guardianBackVictim: "Клиент",
+  guardianAllClearTitle: "Защита активна · Всё спокойно",
+  guardianAllClearSub: "Мониторинг звонков и показа экрана работает в фоне.",
+  guardianLinkedProfile: "Мама · Счета под защитой",
+  guardianRulesTitle: "Правила защиты",
+  guardianRuleAutoShield: "Авто-Мираж",
+  guardianRuleAutoShieldVal: "≥ 65% риск",
+  guardianRuleMasking: "Скрытие при показе экрана",
+  guardianRuleMaskingVal: "Включено",
+  guardianRuleAlert: "Уведомление близким",
+  guardianRuleAlertVal: "In-App Push",
+  guardianPushMeta: "NURA BANK · FAMILY GUARDIAN",
+  guardianPushNow: "СЕЙЧАС",
+  guardianPushTitle: "Попытка обмана мамы перехвачена",
+  guardianPushBody: "Сессия мамы тихо уведена в Мираж. Реальные деньги в безопасности.",
+  guardianProtectedBalance: "Защищённый баланс",
+  guardianLeftBankBadge: "ушло из банка",
+  guardianIncidentTitle: "Детали инцидента",
+  guardianRiskScoreLabel: "Оценка риска",
+  guardianAlgoPrefix: "Алг",
+  guardianAiPrefix: "AI",
+  guardianStatusLabel: "Статус",
+  guardianStatusLive: "Звонок идёт · Мираж скрывает счёт",
+  guardianStatusEnded: "Звонок завершён · Мама уведомлена",
+  guardianMulesLabel: "Пойманные счета дропов",
+  guardianMulesWaiting: "Ловушка взведена · ждём IBAN мошенника",
+  guardianMuleCb412: "CB-412",
+  guardianMuleDecoy: "Мираж",
+  guardianCallMom: "Позвонить маме по защищённой линии",
+  guardianCallingMom: "Звоним маме… (защищённая линия)",
+  guardianHold24h: "Удерживать исходящие 24 часа",
+  guardianHold24hActive: "Защита на 24ч включена ✓",
+  guardianFalseAlarm: "Отметить как ложную тревогу",
+  guardianFalseAlarmToast: "Нужна биометрия после завершения звонка",
 };
 
 export function getUiCopy(locale: Locale): UiCopy {

@@ -153,11 +153,14 @@ export function WalletHome({
         </div>
       </div>
 
-      <div className="rounded-[28px] bg-[var(--card)] px-5 py-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0 truncate text-[15px] font-semibold text-[var(--foreground)]">
-            {activeAccount.name}
-            <span className="mono ml-1.5 text-[11.5px] font-medium text-[var(--muted-foreground)]">
+      <div className="rounded-[28px] bg-[var(--card)] px-4 py-4">
+        <div className="flex items-center justify-between gap-1.5">
+          <div
+            title={activeAccount.name}
+            className="min-w-0 truncate text-[14px] font-semibold text-[var(--foreground)]"
+          >
+            {activeAccount.kind === "vault" ? copy.savingsVaultTitle : copy.currentAccountTitle}
+            <span className="mono ml-1 text-[11px] font-medium text-[var(--muted-foreground)]">
               · •{meta.accountNumber.slice(-4)}
             </span>
           </div>
@@ -171,7 +174,7 @@ export function WalletHome({
                     key={acc.id}
                     type="button"
                     onClick={() => onSelectAccount(acc.id)}
-                    className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold transition ${
+                    className={`rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold transition ${
                       isSelected
                         ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
                         : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
