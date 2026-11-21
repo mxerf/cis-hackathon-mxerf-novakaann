@@ -184,4 +184,30 @@ describe("2-Tier Antifraud Detector — Algorithm Level & Ensemble", () => {
     expect(smallTransfer.activeFlags).not.toContain("FLAG:YOUNG_SIM_CALLER");
     expect(smallTransfer.activeFlags).not.toContain("FLAG:HIGH_VALUE_DRAIN_RATIO");
   });
+
+  test("detects spaced IBAN and card numbers and TRANSFER_UNDER_SCREEN_SHARE flag", () => {
+    const result = evaluateAlgorithmLevel({
+      callActive: true,
+      simAgeDays: 90,
+      isTransferAttempt: true,
+      signals: {
+        unverifiedCaller: true,
+        screenSharing: true,
+        clipboardPasteDetected: false,
+      },
+      transcript: [
+        {
+          id: "sp-1",
+          speaker: "caller",
+          text: "Copy AE07 0331 2345 6789 0123 456 into the field.",
+          timestamp: "2026-11-21T10:00:00.000Z",
+          flaggedTactics: [],
+        },
+      ],
+    });
+
+    expect(result.matchedKeywords).toContain("kw:iban_or_account_dictation");
+    expect(result.activeFlags).toContain("FLAG:TRANSFER_UNDER_SCREEN_SHARE");
+    expect(result.score).toBe(68);
+  });
 });

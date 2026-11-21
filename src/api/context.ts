@@ -12,6 +12,7 @@ export type MirageStore = {
   getSnapshot: () => MirageSnapshot;
   trackAiTask: (sessionId: string, task: Promise<void>) => void;
   waitForPendingAi: (sessionId: string, timeoutMs: number) => Promise<PendingAiWaitResult>;
+  runTransferExclusive: <T>(fn: () => Promise<T>) => Promise<T>;
 };
 
 export type Context = {

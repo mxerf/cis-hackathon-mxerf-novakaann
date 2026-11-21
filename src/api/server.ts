@@ -25,6 +25,7 @@ export function startServer(
   let connectedClients = 0;
   let bunServer: Server<WsClientData> | null = null;
   const pendingAiBySession = new Map<string, Set<Promise<void>>>();
+  let transferLockTail: Promise<void> = Promise.resolve();
 
   function buildSnapshot(): MirageSnapshot {
     return {
@@ -91,6 +92,19 @@ export function startServer(
         timedOut,
         hadPending: true,
       };
+    },
+    async runTransferExclusive<T>(fn: () => Promise<T>): Promise<T> {
+      const previous = transferLockTail;
+      let release: () => void = () => {};
+      transferLockTail = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      try {
+        return await fn();
+      } finally {
+        release();
+      }
     },
   };
 

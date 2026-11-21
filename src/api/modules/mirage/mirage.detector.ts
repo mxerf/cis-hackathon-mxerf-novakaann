@@ -9,6 +9,7 @@ type RuleEntry = {
 const CORROBORATION_FACTOR = 0.62;
 export const YOUNG_SIM_DAYS_THRESHOLD = 14;
 export const HIGH_VALUE_DRAIN_THRESHOLD = 0.45;
+export const VAULT_DRAIN_THRESHOLD = 0.25;
 
 const KEYWORD_RULES: readonly RuleEntry[] = [
   {
@@ -45,7 +46,7 @@ const KEYWORD_RULES: readonly RuleEntry[] = [
     tag: "kw:iban_or_account_dictation",
     weight: 10,
     pattern:
-      /(?:^|[^\p{L}\p{N}_])(AE\d{2}[A-Z0-9]{10,25}|iban|beneficiary account|backup clearing|резервн\p{L}+\s+сч[её]т|резервн\p{L}+\s+карт\p{L}*)/iu,
+      /(?:^|[^\p{L}\p{N}_])(AE\d{2}(?:[\s-]?[A-Z0-9]){10,25}|(?:\d{4}[\s-]?){3}\d{4}|iban|beneficiary account|backup clearing|резервн\p{L}+\s+сч[её]т|резервн\p{L}+\s+карт\p{L}*)/iu,
   },
 ];
 
@@ -83,8 +84,18 @@ export function evaluateAlgorithmLevel(params: {
   transcript: readonly TranscriptEntry[];
   simAgeDays?: number;
   pendingTransferDrainRatio?: number;
+  isTransferAttempt?: boolean;
+  isVaultWithdrawal?: boolean;
 }): AlgorithmDetection {
-  const { callActive, signals, transcript, simAgeDays, pendingTransferDrainRatio } = params;
+  const {
+    callActive,
+    signals,
+    transcript,
+    simAgeDays,
+    pendingTransferDrainRatio,
+    isTransferAttempt,
+    isVaultWithdrawal,
+  } = params;
 
   const activeFlags: string[] = [];
   let score = 0;
@@ -109,19 +120,33 @@ export function evaluateAlgorithmLevel(params: {
     score += 26;
   }
 
+  if (callActive && signals.unverifiedCaller && signals.screenSharing && isTransferAttempt) {
+    activeFlags.push("FLAG:TRANSFER_UNDER_SCREEN_SHARE");
+    score += 22;
+  }
+
   if (signals.clipboardPasteDetected) {
     activeFlags.push("FLAG:EXTERNAL_RECIPIENT_INJECTED");
     score += 12;
   }
 
+  const effectiveDrainThreshold = isVaultWithdrawal
+    ? VAULT_DRAIN_THRESHOLD
+    : HIGH_VALUE_DRAIN_THRESHOLD;
+
   if (
     callActive &&
     signals.unverifiedCaller &&
     pendingTransferDrainRatio !== undefined &&
-    pendingTransferDrainRatio >= HIGH_VALUE_DRAIN_THRESHOLD
+    pendingTransferDrainRatio >= effectiveDrainThreshold
   ) {
     activeFlags.push("FLAG:HIGH_VALUE_DRAIN_RATIO");
     score += 24;
+  }
+
+  if (callActive && signals.unverifiedCaller && isVaultWithdrawal) {
+    activeFlags.push("FLAG:VAULT_WITHDRAWAL_ON_CALL");
+    score += 32;
   }
 
   const callerCorpus = transcript

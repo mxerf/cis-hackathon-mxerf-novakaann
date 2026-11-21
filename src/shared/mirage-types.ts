@@ -49,6 +49,7 @@ export type DetectionState = {
 
 export type CallSession = {
   active: boolean;
+  endedAt?: string;
   callerNumber: string;
   callerLabel: string;
   simAgeDays: number;
@@ -97,6 +98,8 @@ export type MirageState = {
   presetId: string;
   realAccounts: Account[];
   mirageAccounts: Account[];
+  initialBalancesByAccount: Record<string, number>;
+  sessionOutboundByAccount: Record<string, number>;
   mode: MirageMode;
   call: CallSession;
   honeytrapStage: HoneytrapStage;

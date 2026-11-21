@@ -7,6 +7,8 @@ import {
   applyAiDetection,
   endCall,
   ingestTranscriptChunk,
+  isCallContextActive,
+  normalizeRecipientValue,
   resetState,
   setLocale,
   startCall,
@@ -25,6 +27,7 @@ import type {
 } from "./mirage.schemas.ts";
 
 export const PRE_TRANSFER_AI_WAIT_MS = 3500;
+const DOUBLE_TAP_DEDUP_WINDOW_MS = 2500;
 
 export function snapshot({ ctx }: PublicResolverOptions) {
   return ctx.store.getSnapshot();
@@ -204,41 +207,68 @@ export async function executeTransfer({
   ctx,
   input,
 }: PublicResolverOptions & { input: SubmitTransferSchemaInput }) {
-  let current = ctx.store.getState();
+  return ctx.store.runTransferExclusive(async () => {
+    let current = ctx.store.getState();
+    const nowIso = new Date().toISOString();
 
-  // Pre-Transfer Gate: if a live call is active and AI scoring is still in flight,
-  // hold settlement briefly so AI can engage Mirage before real funds leave the bank.
-  const preTransferGate =
-    current.mode === "normal" && current.call.active
-      ? await ctx.store.waitForPendingAi(current.sessionId, PRE_TRANSFER_AI_WAIT_MS)
-      : { waitedMs: 0, timedOut: false, hadPending: false };
+    // Pre-Transfer Gate: active call OR post-call cooldown window holds settlement briefly
+    // so in-flight AI can engage Mirage before real funds leave the bank.
+    const preTransferGate =
+      current.mode === "normal" && isCallContextActive(current.call, nowIso)
+        ? await ctx.store.waitForPendingAi(current.sessionId, PRE_TRANSFER_AI_WAIT_MS)
+        : { waitedMs: 0, timedOut: false, hadPending: false };
 
-  current = ctx.store.getState();
-  const wasAlertSent = current.trustedAlertSent;
-  const preset = getPresetById(current.presetId);
+    current = ctx.store.getState();
 
-  const result = submitTransfer(current, input, preset);
-  const saved = ctx.store.setState(result.state);
+    // Idempotency guard against nervous double-taps during Pre-Transfer Gate wait
+    const normalizedRecipient = normalizeRecipientValue(input.recipientValue);
+    const roundedAmount = Math.round(input.amount * 100) / 100;
+    const latestReceipt = current.receipts[0];
+    if (
+      latestReceipt &&
+      normalizeRecipientValue(latestReceipt.recipientValue) === normalizedRecipient &&
+      latestReceipt.amount === roundedAmount &&
+      Date.now() - Date.parse(latestReceipt.createdAt) <= DOUBLE_TAP_DEDUP_WINDOW_MS
+    ) {
+      return {
+        outcome: current.mode === "mirage" ? ("mirage_completed" as const) : ("completed" as const),
+        errorMessage: undefined,
+        receipt: latestReceipt,
+        capturedMule: undefined,
+        deduplicated: true,
+        preTransferGate,
+        telegram: undefined,
+        ...ctx.store.getSnapshot(),
+      };
+    }
 
-  let telegram: { sent: boolean; reason?: string } | undefined;
-  if (!wasAlertSent && result.state.trustedAlertSent) {
-    telegram = await sendTelegramAlert({
-      callerNumber: result.state.call.callerNumber,
-      coercionScore: result.state.call.coercionScore,
-      capturedMules: result.state.capturedMules,
+    const wasAlertSent = current.trustedAlertSent;
+    const preset = getPresetById(current.presetId);
+
+    const result = submitTransfer(current, input, preset);
+    const saved = ctx.store.setState(result.state);
+
+    let telegram: { sent: boolean; reason?: string } | undefined;
+    if (!wasAlertSent && result.state.trustedAlertSent) {
+      telegram = await sendTelegramAlert({
+        callerNumber: result.state.call.callerNumber,
+        coercionScore: result.state.call.coercionScore,
+        capturedMules: result.state.capturedMules,
+        receipt: result.receipt,
+      });
+    }
+
+    return {
+      outcome: result.outcome,
+      errorMessage: result.errorMessage,
       receipt: result.receipt,
-    });
-  }
-
-  return {
-    outcome: result.outcome,
-    errorMessage: result.errorMessage,
-    receipt: result.receipt,
-    capturedMule: result.capturedMule,
-    preTransferGate,
-    telegram,
-    ...saved,
-  };
+      capturedMule: result.capturedMule,
+      deduplicated: false,
+      preTransferGate,
+      telegram,
+      ...saved,
+    };
+  });
 }
 
 export async function sendSupport({

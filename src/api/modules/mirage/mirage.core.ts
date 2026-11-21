@@ -23,9 +23,41 @@ export { COERCION_ACTIVATION_THRESHOLD, getVisibleAccounts } from "./mirage.type
 
 const FNV_OFFSET_BASIS = 2_166_136_261;
 const FNV_PRIME = 16_777_619;
+export const POST_CALL_COOLDOWN_MS = 3 * 60 * 1000;
 
 function cloneAccounts(accounts: readonly Account[]): Account[] {
   return accounts.map((account) => ({ ...account }));
+}
+
+function buildBalanceMap(accounts: readonly Account[]): Record<string, number> {
+  const balances: Record<string, number> = {};
+  for (const account of accounts) {
+    balances[account.id] = account.balance;
+  }
+  return balances;
+}
+
+export function normalizeRecipientValue(rawValue: string): string {
+  return rawValue.replace(/[\s-]/g, "").toUpperCase();
+}
+
+export function isCallContextActive(
+  call: CallSession,
+  nowIso: string = new Date().toISOString(),
+): boolean {
+  if (call.active) {
+    return true;
+  }
+  if (!call.endedAt) {
+    return false;
+  }
+  const endedMs = Date.parse(call.endedAt);
+  const nowMs = Date.parse(nowIso);
+  if (!Number.isFinite(endedMs) || !Number.isFinite(nowMs)) {
+    return false;
+  }
+  const elapsed = nowMs - endedMs;
+  return elapsed >= 0 && elapsed <= POST_CALL_COOLDOWN_MS;
 }
 
 function makeShortCode(seed: string): string {
@@ -59,14 +91,22 @@ function recomputeCallDetection(
   call: CallSession,
   signals: DetectionSignals,
   ai: AiDetection,
-  pendingTransferDrainRatio?: number,
+  options?: {
+    nowIso?: string;
+    pendingTransferDrainRatio?: number;
+    isTransferAttempt?: boolean;
+    isVaultWithdrawal?: boolean;
+  },
 ): CallSession {
+  const callContextActive = isCallContextActive(call, options?.nowIso);
   const algorithm = evaluateAlgorithmLevel({
-    callActive: call.active,
+    callActive: callContextActive,
     signals,
     transcript: call.transcript,
     simAgeDays: call.simAgeDays,
-    pendingTransferDrainRatio,
+    pendingTransferDrainRatio: options?.pendingTransferDrainRatio,
+    isTransferAttempt: options?.isTransferAttempt,
+    isVaultWithdrawal: options?.isVaultWithdrawal,
   });
   const combinedScore = combineDetectionScores(algorithm.score, ai.score);
 
@@ -82,10 +122,14 @@ function recomputeCallDetection(
   };
 }
 
-function maybeEngageMirage(state: MirageState, nextCall: CallSession): MirageState {
+function maybeEngageMirage(
+  state: MirageState,
+  nextCall: CallSession,
+  nowIso?: string,
+): MirageState {
   const shouldEnterMirage =
     state.mode === "normal" &&
-    nextCall.active &&
+    isCallContextActive(nextCall, nowIso) &&
     nextCall.coercionScore >= COERCION_ACTIVATION_THRESHOLD;
 
   return {
@@ -148,6 +192,8 @@ export function createInitialState(
     presetId: preset.id,
     realAccounts,
     mirageAccounts,
+    initialBalancesByAccount: buildBalanceMap(realAccounts),
+    sessionOutboundByAccount: {},
     mode: "normal",
     call: baseCall,
     honeytrapStage: "armed",
@@ -170,10 +216,15 @@ export function createInitialState(
 export function startCall(
   state: MirageState,
   overrides?: Partial<Pick<CallSession, "callerNumber" | "callerLabel" | "simAgeDays">>,
+  now: string = new Date().toISOString(),
 ): MirageState {
+  // Preserve cumulative outbound tracking if caller redials within post-call cooldown
+  const isRedialDuringCooldown = !state.call.active && isCallContextActive(state.call, now);
+
   const draftCall: CallSession = {
     ...state.call,
     active: true,
+    endedAt: undefined,
     callerNumber: overrides?.callerNumber ?? state.call.callerNumber,
     callerLabel: overrides?.callerLabel ?? state.call.callerLabel,
     simAgeDays: overrides?.simAgeDays ?? state.call.simAgeDays,
@@ -183,21 +234,35 @@ export function startCall(
     draftCall,
     state.call.detection.signals,
     state.call.detection.ai,
+    { nowIso: now },
   );
 
-  return maybeEngageMirage(state, nextCall);
+  return maybeEngageMirage(
+    {
+      ...state,
+      initialBalancesByAccount: isRedialDuringCooldown
+        ? state.initialBalancesByAccount
+        : buildBalanceMap(state.realAccounts),
+      sessionOutboundByAccount: isRedialDuringCooldown ? state.sessionOutboundByAccount : {},
+    },
+    nextCall,
+    now,
+  );
 }
 
-export function endCall(state: MirageState): MirageState {
+export function endCall(state: MirageState, now: string = new Date().toISOString()): MirageState {
   const draftCall: CallSession = {
     ...state.call,
     active: false,
+    endedAt: now,
   };
   const nextSignals: DetectionSignals = {
     ...state.call.detection.signals,
     screenSharing: false,
   };
-  const nextCall = recomputeCallDetection(draftCall, nextSignals, state.call.detection.ai);
+  const nextCall = recomputeCallDetection(draftCall, nextSignals, state.call.detection.ai, {
+    nowIso: now,
+  });
   return {
     ...state,
     call: nextCall,
@@ -277,40 +342,69 @@ export function applyAiDetection(
     tactics: string[];
     reasoning: string;
     source: "ai" | "fallback";
+    nowIso?: string;
   },
 ): MirageState {
   const prevAi = state.call.detection.ai;
+  const clampedIncoming = clampScore(input.aiScore);
+  const shouldUpdateReasoning = prevAi.source === "standby" || clampedIncoming >= prevAi.score;
+
   const nextAi: AiDetection = {
-    score: clampScore(Math.max(prevAi.score, input.aiScore)),
+    score: Math.max(prevAi.score, clampedIncoming),
     tactics: [...new Set([...prevAi.tactics, ...input.tactics])],
-    reasoning: input.reasoning.trim() || prevAi.reasoning,
-    source: input.source,
+    reasoning: shouldUpdateReasoning
+      ? input.reasoning.trim() || prevAi.reasoning
+      : prevAi.reasoning,
+    source: shouldUpdateReasoning ? input.source : prevAi.source,
   };
 
-  const nextCall = recomputeCallDetection(state.call, state.call.detection.signals, nextAi);
-  return maybeEngageMirage(state, nextCall);
+  const nextCall = recomputeCallDetection(state.call, state.call.detection.signals, nextAi, {
+    nowIso: input.nowIso,
+  });
+  return maybeEngageMirage(state, nextCall, input.nowIso);
 }
 
 export function evaluatePreTransferRisk(
   state: MirageState,
   fromAccountId: string,
   amount: number,
+  nowIso: string = new Date().toISOString(),
 ): MirageState {
-  if (state.mode !== "normal" || !state.call.active) {
+  if (state.mode !== "normal" || !isCallContextActive(state.call, nowIso)) {
     return state;
   }
   const sourceAccount = state.realAccounts.find((acc) => acc.id === fromAccountId);
   if (!sourceAccount || sourceAccount.balance <= 0) {
     return state;
   }
-  const drainRatio = amount / sourceAccount.balance;
+  const initialBalance = state.initialBalancesByAccount[fromAccountId] ?? sourceAccount.balance;
+  const priorOutbound = state.sessionOutboundByAccount[fromAccountId] ?? 0;
+  const accountDrainRatio = initialBalance > 0 ? (priorOutbound + amount) / initialBalance : 0;
+
+  const totalInitialBalance = Object.values(state.initialBalancesByAccount).reduce(
+    (sum, val) => sum + val,
+    0,
+  );
+  const totalPriorOutbound = Object.values(state.sessionOutboundByAccount).reduce(
+    (sum, val) => sum + val,
+    0,
+  );
+  const totalDrainRatio =
+    totalInitialBalance > 0 ? (totalPriorOutbound + amount) / totalInitialBalance : 0;
+  const effectiveDrainRatio = Math.max(accountDrainRatio, totalDrainRatio);
+
   const nextCall = recomputeCallDetection(
     state.call,
     state.call.detection.signals,
     state.call.detection.ai,
-    drainRatio,
+    {
+      nowIso,
+      pendingTransferDrainRatio: effectiveDrainRatio,
+      isTransferAttempt: true,
+      isVaultWithdrawal: sourceAccount.kind === "vault",
+    },
   );
-  return maybeEngageMirage(state, nextCall);
+  return maybeEngageMirage(state, nextCall, nowIso);
 }
 
 export function advanceScriptedChunk(
@@ -369,7 +463,7 @@ export function submitTransfer(
 
   const amount = Math.round(input.amount * 100) / 100;
   const now = input.now ?? new Date().toISOString();
-  const evaluatedState = evaluatePreTransferRisk(state, input.fromAccountId, amount);
+  const evaluatedState = evaluatePreTransferRisk(state, input.fromAccountId, amount, now);
   const refCode = `Ref #${preset.refPrefix}-${input.refSuffix ?? makeShortCode(`${recipientValue}:${amount}:${now}:${evaluatedState.receipts.length}`)}`;
 
   if (evaluatedState.mode === "normal") {
@@ -402,6 +496,14 @@ export function submitTransfer(
         : acc,
     );
 
+    const nextOutbound = isCallContextActive(evaluatedState.call, now)
+      ? {
+          ...evaluatedState.sessionOutboundByAccount,
+          [sourceAccount.id]:
+            (evaluatedState.sessionOutboundByAccount[sourceAccount.id] ?? 0) + amount,
+        }
+      : evaluatedState.sessionOutboundByAccount;
+
     const receipt: DecoyReceipt = {
       refCode,
       amount,
@@ -416,6 +518,7 @@ export function submitTransfer(
         ...evaluatedState,
         realAccounts: updatedReal,
         mirageAccounts: cloneAccounts(updatedReal),
+        sessionOutboundByAccount: nextOutbound,
         receipts: [receipt, ...evaluatedState.receipts],
       },
       outcome: "completed",
@@ -444,6 +547,23 @@ export function submitTransfer(
         evaluatedState.locale === "ru"
           ? "Недостаточно средств на выбранном счёте."
           : "Insufficient balance in selected account.",
+    };
+  }
+
+  const normalizedRecipient = normalizeRecipientValue(recipientValue);
+  const existingRejectedMule =
+    evaluatedState.honeytrapStage === "first_mule_rejected"
+      ? evaluatedState.capturedMules.find(
+          (mule) => normalizeRecipientValue(mule.value) === normalizedRecipient,
+        )
+      : undefined;
+
+  if (existingRejectedMule) {
+    return {
+      state: evaluatedState,
+      outcome: "rejected_honeytrap",
+      errorMessage: preset.honeytrapRejectionMessage[evaluatedState.locale],
+      capturedMule: existingRejectedMule,
     };
   }
 

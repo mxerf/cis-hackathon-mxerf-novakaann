@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
   COERCION_ACTIVATION_THRESHOLD,
+  POST_CALL_COOLDOWN_MS,
   advanceScriptedChunk,
   applyAiDetection,
   createInitialState,
   detectMuleKind,
+  endCall,
   getVisibleAccounts,
   ingestTranscriptChunk,
+  isCallContextActive,
   resetState,
   setLocale,
   startCall,
@@ -254,5 +257,156 @@ describe("Mirage coercion shield core", () => {
     expect(enriched.mode).toBe("mirage");
     expect(enriched.call.detection.ai.score).toBe(86);
     expect(enriched.call.transcript).toHaveLength(1);
+  });
+
+  test("post-call cooldown keeps Mirage protection alive after caller hangs up, then expires", () => {
+    const t0 = "2026-11-21T10:00:00.000Z";
+    const tWithinCooldown = "2026-11-21T10:00:15.000Z";
+    const tAfterCooldown = new Date(Date.parse(t0) + POST_CALL_COOLDOWN_MS + 10_000).toISOString();
+
+    let state = startCall(createInitialState(BANK_REFUND_TRAP_PRESET, "en", t0));
+    state = endCall(state, t0);
+    expect(state.call.active).toBe(false);
+    expect(isCallContextActive(state.call, tWithinCooldown)).toBe(true);
+    expect(isCallContextActive(state.call, tAfterCooldown)).toBe(false);
+
+    const afterAi = applyAiDetection(state, {
+      aiScore: 94,
+      tactics: ["safe_account_lure", "isolation"],
+      reasoning: "Caller ended call right before transfer instruction.",
+      source: "ai",
+      nowIso: tWithinCooldown,
+    });
+    expect(afterAi.mode).toBe("mirage");
+  });
+
+  test("same-IBAN retry (even with spaces) stays on CB-412 without duplicating capturedMules", () => {
+    let state = createInitialState(BANK_REFUND_TRAP_PRESET, "en", "2026-11-21T10:00:00.000Z");
+    state = advanceScriptedChunk(state, BANK_REFUND_TRAP_PRESET, "2026-11-21T10:01:00.000Z");
+    state = advanceScriptedChunk(state, BANK_REFUND_TRAP_PRESET, "2026-11-21T10:01:10.000Z");
+    state = advanceScriptedChunk(state, BANK_REFUND_TRAP_PRESET, "2026-11-21T10:01:20.000Z");
+
+    const first = submitTransfer(state, {
+      fromAccountId: "acc-checking",
+      recipientValue: "AE070331234567890123456",
+      amount: 14500,
+    });
+    expect(first.outcome).toBe("rejected_honeytrap");
+    expect(first.state.capturedMules).toHaveLength(1);
+
+    const retrySame = submitTransfer(first.state, {
+      fromAccountId: "acc-checking",
+      recipientValue: "AE07 0331 2345 6789 0123 456",
+      amount: 14500,
+    });
+    expect(retrySame.outcome).toBe("rejected_honeytrap");
+    expect(retrySame.state.capturedMules).toHaveLength(1);
+    expect(retrySame.state.receipts).toHaveLength(0);
+
+    const backup = submitTransfer(retrySame.state, {
+      fromAccountId: "acc-checking",
+      recipientValue: "AE460090000000123456789",
+      amount: 14500,
+    });
+    expect(backup.outcome).toBe("mirage_completed");
+    expect(backup.state.capturedMules).toHaveLength(2);
+  });
+
+  test("blocks smurfing via cumulative session drain and screen-share transfer flag", () => {
+    let state = startCall(createInitialState(BANK_REFUND_TRAP_PRESET, "en"), {
+      simAgeDays: 90,
+    });
+    state = updateDetectionSignals(state, { screenSharing: true });
+
+    const r1 = submitTransfer(state, {
+      fromAccountId: "acc-checking",
+      recipientValue: "AE070331234567890123456",
+      amount: 8000,
+    });
+    expect(r1.outcome).toBe("completed");
+    expect(r1.state.sessionOutboundByAccount["acc-checking"]).toBe(8000);
+
+    // Second split transfer pushes cumulative drain to 15,000 / 24,500 = 61% -> Mirage!
+    const r2 = submitTransfer(r1.state, {
+      fromAccountId: "acc-checking",
+      recipientValue: "AE070331234567890123456",
+      amount: 7000,
+    });
+    expect(r2.state.mode).toBe("mirage");
+    expect(r2.outcome).toBe("rejected_honeytrap");
+    expect(r2.state.call.detection.algorithm.activeFlags).toContain("FLAG:HIGH_VALUE_DRAIN_RATIO");
+    expect(r2.state.realAccounts[0]?.balance).toBe(16500);
+  });
+
+  test("out-of-order lower AI score never overwrites high-risk AI reasoning", () => {
+    let state = startCall(createInitialState(BANK_REFUND_TRAP_PRESET, "en"));
+    state = applyAiDetection(state, {
+      aiScore: 96,
+      tactics: ["fake_refund_reversal"],
+      reasoning: "Confirmed active coercion with fake reversal.",
+      source: "ai",
+    });
+
+    const afterLateOldChunk = applyAiDetection(state, {
+      aiScore: 34,
+      tactics: ["authority_impersonation"],
+      reasoning: "Early unverified opener.",
+      source: "ai",
+    });
+
+    expect(afterLateOldChunk.call.detection.ai.score).toBe(96);
+    expect(afterLateOldChunk.call.detection.ai.reasoning).toBe(
+      "Confirmed active coercion with fake reversal.",
+    );
+    expect(afterLateOldChunk.call.detection.ai.tactics).toContain("authority_impersonation");
+  });
+
+  test("redial within cooldown preserves cumulative smurfing counter and blocks 2nd split transfer", () => {
+    const t0 = "2026-11-21T10:00:00.000Z";
+    const tRedial = "2026-11-21T10:00:20.000Z";
+    let state = startCall(
+      createInitialState(BANK_REFUND_TRAP_PRESET, "en", t0),
+      { simAgeDays: 90 },
+      t0,
+    );
+    state = updateDetectionSignals(state, { screenSharing: true });
+
+    const p1 = submitTransfer(state, {
+      fromAccountId: "acc-checking",
+      recipientValue: "AE070331234567890123456",
+      amount: 9000,
+      now: t0,
+    });
+    expect(p1.outcome).toBe("completed");
+
+    let redialed = endCall(p1.state, t0);
+    redialed = startCall(redialed, { simAgeDays: 90 }, tRedial);
+    redialed = updateDetectionSignals(redialed, { screenSharing: true });
+
+    const p2 = submitTransfer(redialed, {
+      fromAccountId: "acc-checking",
+      recipientValue: "AE070331234567890123456",
+      amount: 6500,
+      now: tRedial,
+    });
+    expect(p2.state.mode).toBe("mirage");
+    expect(p2.outcome).toBe("rejected_honeytrap");
+    expect(p2.state.realAccounts[0]?.balance).toBe(15500);
+  });
+
+  test("protects Savings Vault from large withdrawal during unverified call", () => {
+    const state = startCall(createInitialState(BANK_REFUND_TRAP_PRESET, "en"), { simAgeDays: 5 });
+    const res = submitTransfer(state, {
+      fromAccountId: "acc-vault",
+      recipientValue: "AE070331234567890123456",
+      amount: 70000,
+    });
+
+    expect(res.state.mode).toBe("mirage");
+    expect(res.outcome).toBe("rejected_honeytrap");
+    expect(res.state.call.detection.algorithm.activeFlags).toContain(
+      "FLAG:VAULT_WITHDRAWAL_ON_CALL",
+    );
+    expect(res.state.realAccounts[1]?.balance).toBe(140000);
   });
 });
