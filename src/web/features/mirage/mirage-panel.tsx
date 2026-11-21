@@ -1,27 +1,15 @@
-import {
-  BellRing,
-  Check,
-  ClipboardPaste,
-  MonitorUp,
-  PhoneCall,
-  Play,
-  Send,
-  ShieldAlert,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight, Check, Send } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import {
   COERCION_ACTIVATION_THRESHOLD,
-  type AiAssessmentSource,
   type DetectionSignals,
   type MirageState,
   type ScenarioPreset,
   type ScriptedTranscriptChunk,
   type TranscriptSpeaker,
 } from "../../../shared/mirage-types.ts";
-import { formatAed, formatNumber, getUiCopy, shortIban } from "../../lib/ui-copy.ts";
+import { formatAed, formatSignalReason, getUiCopy, shortIban } from "../../lib/ui-copy.ts";
 
 const POST_CALL_COOLDOWN_MS = 180_000;
 
@@ -42,48 +30,14 @@ export type MiragePanelProps = {
   onToggleGuardianView: () => void;
 };
 
-function getSourceLabel(
-  source: AiAssessmentSource,
-  isAiPending: boolean,
-  copy: ReturnType<typeof getUiCopy>,
-): string {
-  if (isAiPending) {
-    return copy.aiAnalyzingBadge;
-  }
-  switch (source) {
-    case "ai":
-      return copy.sourceAi;
-    case "scripted":
-      return copy.sourceScripted;
-    case "fallback":
-      return copy.sourceFallback;
-    case "standby":
-      return copy.sourceStandby;
-  }
-}
-
-function getStageLabel(
-  stage: MirageState["honeytrapStage"],
-  copy: ReturnType<typeof getUiCopy>,
-): string {
-  switch (stage) {
-    case "armed":
-      return copy.stageArmed;
-    case "first_mule_rejected":
-      return copy.stageFirstRejected;
-    case "completed":
-      return copy.stageCompleted;
-  }
-}
-
-function getRiskBarColor(score: number, isMirage: boolean): string {
+function getRiskColor(score: number, isMirage: boolean, isActivityLive: boolean): string {
   if (isMirage || score >= COERCION_ACTIVATION_THRESHOLD) {
     return "var(--primary)";
   }
   if (score >= 35) {
     return "#f59e0b";
   }
-  return "var(--call-green)";
+  return isActivityLive ? "var(--call-green)" : "var(--muted-foreground)";
 }
 
 export function MiragePanel({
@@ -104,6 +58,7 @@ export function MiragePanel({
 }: MiragePanelProps) {
   const copy = getUiCopy(state.locale);
   const [customLine, setCustomLine] = useState("");
+  const [showCustomInput, setShowCustomInput] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [riskDelta, setRiskDelta] = useState<number | null>(null);
 
@@ -111,6 +66,7 @@ export function MiragePanel({
   const prevSessionRef = useRef(state.sessionId);
   const deltaTimerRef = useRef<number | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const customInputRef = useRef<HTMLInputElement | null>(null);
 
   const combinedScore = state.call.detection.combinedScore;
 
@@ -119,6 +75,8 @@ export function MiragePanel({
       prevSessionRef.current = state.sessionId;
       prevScoreRef.current = combinedScore;
       setRiskDelta(null);
+      setShowCustomInput(false);
+      setCustomLine("");
       return;
     }
 
@@ -150,6 +108,12 @@ export function MiragePanel({
       el.scrollTop = el.scrollHeight;
     }
   }, [state.call.transcript.length]);
+
+  useEffect(() => {
+    if (showCustomInput) {
+      customInputRef.current?.focus();
+    }
+  }, [showCustomInput]);
 
   useEffect(() => {
     if (!state.call.endedAt || state.call.active) {
@@ -204,31 +168,30 @@ export function MiragePanel({
     nowMs - Date.parse(state.call.endedAt ?? "") < POST_CALL_COOLDOWN_MS;
 
   const isActivityLive = state.call.active || inCooldown || state.call.transcript.length > 0;
-  const modeBadgeLabel = isMirage
-    ? copy.panelModeMirage
+  const statusLabel = isMirage
+    ? copy.statusMirageActive
     : isActivityLive
-      ? copy.panelModeMonitoring
-      : copy.panelModeStandby;
+      ? copy.statusMonitoring
+      : copy.statusStandby;
 
   const algo = state.call.detection.algorithm;
   const ai = state.call.detection.ai;
 
-  const algoTags = [...algo.matchedConstructions, ...algo.activeFlags, ...algo.matchedKeywords];
-  const visibleAlgoTags = algoTags.slice(0, 3);
-  const hiddenAlgoCount = Math.max(0, algoTags.length - visibleAlgoTags.length);
+  const rawReasonTags = [
+    ...algo.matchedConstructions,
+    ...algo.activeFlags,
+    ...algo.matchedKeywords,
+  ];
+  const humanReasons = Array.from(
+    new Set(rawReasonTags.map((tag) => formatSignalReason(tag, state.locale))),
+  );
+  const visibleReasonsText = humanReasons.slice(0, 3).join(" · ");
+  const fullReasonsTitle = humanReasons.join(" · ");
 
-  const riskBarColor = getRiskBarColor(combinedScore, isMirage);
-  const riskStatusLabel =
-    isMirage || combinedScore >= COERCION_ACTIVATION_THRESHOLD
-      ? copy.riskMirageEngaged
-      : combinedScore >= 35
-        ? copy.riskElevated
-        : copy.riskLow;
+  const riskColor = getRiskColor(combinedScore, isMirage, isActivityLive);
 
   const playedTexts = new Set(state.call.transcript.map((entry) => entry.text));
-  const playedCueCount = preset.scriptedChunks.filter((chunk) =>
-    playedTexts.has(chunk.text),
-  ).length;
+  const nextChunk = preset.scriptedChunks[state.scriptedChunkIndex];
   const allCuesPlayed = state.scriptedChunkIndex >= preset.scriptedChunks.length;
 
   const initialRealTotal =
@@ -242,231 +205,211 @@ export function MiragePanel({
       ? currentMirageTotal
       : currentRealTotal;
   const actuallyTransferred = Math.max(0, initialRealTotal - currentRealTotal);
-  const decoyDelta = Math.max(0, currentRealTotal - currentMirageTotal);
+  const hasDecoyBalanceDiff = !isRevealed && currentMirageTotal !== currentRealTotal && isMirage;
 
-  const realEveryday = state.realAccounts.find((a) => a.kind === "checking");
-  const realVault = state.realAccounts.find((a) => a.kind === "vault");
+  const showOutcomeBlock = isMirage || state.receipts.length > 0 || state.capturedMules.length > 0;
 
   const transferredValueColor =
     actuallyTransferred === 0
-      ? isMirage
-        ? "text-[var(--primary)]"
-        : "text-[var(--foreground)]"
+      ? "text-[var(--primary)]"
       : isSafeCase
         ? "text-[var(--call-green)]"
         : "text-[var(--destructive)]";
 
+  const verdictEngineLabel =
+    algo.score >= COERCION_ACTIVATION_THRESHOLD && ai.source === "ai"
+      ? copy.verdictEngineBoth
+      : ai.source === "ai"
+        ? copy.verdictEngineHaiku
+        : copy.verdictEngineAlgo;
+
+  const verdictReason =
+    ai.source !== "standby" && ai.reasoning
+      ? ai.reasoning
+      : isMirage
+        ? copy.verdictActiveBody
+        : copy.safeControlLedgerNote;
+
+  const callChipText = state.call.active
+    ? copy.chipCallActive
+    : inCooldown
+      ? copy.chipCallCooldown
+      : state.call.endedAt
+        ? copy.chipCallEnded
+        : copy.chipCallActive;
+
   return (
     <section
       aria-label="Mirage private bank panel"
-      className="dark relative flex h-[780px] w-[560px] flex-none flex-col overflow-hidden rounded-[28px] border border-[var(--border)] bg-[var(--background)] px-5 py-4 shadow-[var(--shadow-xl)]"
+      className="dark relative flex h-[780px] w-[560px] flex-none flex-col overflow-hidden rounded-[28px] border border-[var(--border)] bg-[var(--background)] px-7 py-6 shadow-[var(--shadow-xl)]"
     >
-      {/* 1. Header */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 truncate text-[19px] font-bold tracking-[-0.01em] text-[var(--foreground)]">
+      {/* Zone A: Quiet header + single-row interactive signal chips */}
+      <div className="flex flex-none items-baseline justify-between gap-3">
+        <div className="min-w-0 truncate text-[20px] font-bold tracking-[-0.01em] text-[var(--foreground)]">
           {copy.panelBrand}
-          <small className="ml-2 text-[11.5px] font-medium tracking-[0.02em] text-[var(--muted-foreground)]">
+          <small className="ml-2.5 text-[12px] font-medium tracking-[0.02em] text-[var(--muted-foreground)]">
             {copy.panelSubtitle}
           </small>
         </div>
 
-        <div className="flex flex-none items-center gap-1.5">
+        <span
+          className={`inline-flex flex-none items-center gap-1.5 text-[12px] font-semibold whitespace-nowrap ${
+            isMirage ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"
+          }`}
+        >
           <span
-            className={`mono rounded-full border px-2 py-0.5 text-[9.5px] font-semibold tracking-[0.08em] uppercase ${
-              isSafeCase
-                ? "border-[var(--call-green)]/50 bg-[color-mix(in_srgb,var(--call-green)_14%,var(--card))] text-[var(--call-green)]"
-                : "border-[var(--border)] bg-[var(--card)] text-[var(--secondary-foreground)]"
-            }`}
-          >
-            {isSafeCase ? copy.caseBadgeSafe : copy.caseBadgeScam}
-          </span>
-
-          <span
-            className={`mono inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9.5px] font-semibold tracking-[0.08em] uppercase ${
+            className={`h-1.5 w-1.5 rounded-full ${
               isMirage
-                ? "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_20%,var(--card))] text-[var(--primary)]"
-                : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)]"
+                ? "bg-[var(--primary)]"
+                : isActivityLive
+                  ? "bg-[var(--call-green)]"
+                  : "bg-[var(--muted-foreground)]/60"
             }`}
-          >
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                isMirage
+          />
+          {statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-3.5 flex flex-none flex-nowrap items-center gap-1.5">
+        <button
+          type="button"
+          disabled={isBusy}
+          title={copy.chipTipCall}
+          onClick={() => void (state.call.active ? onEndCall() : onStartCall())}
+          aria-pressed={state.call.active}
+          className={`inline-flex h-[28px] flex-none items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 text-[12px] font-semibold whitespace-nowrap transition hover:border-[var(--primary)]/50 ${
+            state.call.active
+              ? "text-[var(--foreground)]"
+              : inCooldown
+                ? "text-[var(--primary)]"
+                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+          }`}
+        >
+          <i
+            aria-hidden="true"
+            className={`h-[7px] w-[7px] flex-none rounded-full ${
+              state.call.active
+                ? "bg-[var(--call-green)]"
+                : inCooldown
                   ? "bg-[var(--primary)]"
-                  : isActivityLive
-                    ? "bg-[var(--call-green)]"
-                    : "bg-[var(--muted-foreground)]"
-              }`}
-            />
-            {modeBadgeLabel}
-          </span>
-        </div>
+                  : "bg-[var(--accent)]"
+            }`}
+          />
+          {callChipText}
+        </button>
+
+        <button
+          type="button"
+          disabled={isBusy}
+          title={copy.chipTipScreen}
+          onClick={() => void handleToggleScreenShare()}
+          aria-pressed={isScreenSharing}
+          className={`inline-flex h-[28px] flex-none items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 text-[12px] font-semibold whitespace-nowrap transition hover:border-[var(--primary)]/50 ${
+            isScreenSharing
+              ? "text-[var(--foreground)]"
+              : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+          }`}
+        >
+          <i
+            aria-hidden="true"
+            className={`h-[7px] w-[7px] flex-none rounded-full ${
+              isScreenSharing ? "bg-[var(--primary)]" : "bg-[var(--accent)]"
+            }`}
+          />
+          {copy.chipScreenSharing}
+        </button>
+
+        <button
+          type="button"
+          disabled={isBusy}
+          title={copy.chipTipUnverified}
+          onClick={() => void handleToggleUnverifiedCaller()}
+          aria-pressed={signals.unverifiedCaller}
+          className={`inline-flex h-[28px] flex-none items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 text-[12px] font-semibold whitespace-nowrap transition hover:border-[var(--primary)]/50 ${
+            signals.unverifiedCaller
+              ? "text-[var(--foreground)]"
+              : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+          }`}
+        >
+          <i
+            aria-hidden="true"
+            className={`h-[7px] w-[7px] flex-none rounded-full ${
+              signals.unverifiedCaller ? "bg-[var(--primary)]" : "bg-[var(--accent)]"
+            }`}
+          />
+          {copy.chipUnverified}
+        </button>
+
+        <button
+          type="button"
+          disabled={isBusy}
+          title={copy.chipTipIban}
+          onClick={() => void handleToggleIbanPasted()}
+          aria-pressed={signals.clipboardPasteDetected}
+          className={`inline-flex h-[28px] flex-none items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 text-[12px] font-semibold whitespace-nowrap transition hover:border-[var(--primary)]/50 ${
+            signals.clipboardPasteDetected
+              ? "text-[var(--foreground)]"
+              : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+          }`}
+        >
+          <i
+            aria-hidden="true"
+            className={`h-[7px] w-[7px] flex-none rounded-full ${
+              signals.clipboardPasteDetected ? "bg-[var(--primary)]" : "bg-[var(--accent)]"
+            }`}
+          />
+          {copy.chipIbanPasted}
+        </button>
       </div>
 
-      {/* 2. HERO: Interactive Fraud Probability Scale + 2-Tier Sync Cards */}
-      <div
-        className={`mt-2.5 rounded-[var(--radius-sm)] border px-3.5 py-2.5 shadow-[var(--shadow-xs)] transition-colors ${
-          isMirage
-            ? "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_14%,var(--card))]"
-            : "border-[var(--border)] bg-[var(--card)]"
-        }`}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-baseline gap-2">
-            <span className="text-[10.5px] font-semibold tracking-[0.12em] text-[var(--muted-foreground)] uppercase">
-              {copy.fraudProbabilityLabel}
-            </span>
-            <span
-              className="mono text-[28px] leading-none font-bold tracking-[-0.03em]"
-              style={{ color: riskBarColor }}
-            >
-              {combinedScore}%
-            </span>
-            {riskDelta !== null && (
-              <motion.span
-                key={`${combinedScore}-${riskDelta}`}
-                initial={{ opacity: 0, y: 4, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                className={`mono rounded-full px-1.5 py-0.5 text-[10.5px] font-bold ${
-                  riskDelta > 0
-                    ? "bg-[color-mix(in_oklch,var(--primary)_24%,var(--background))] text-[var(--primary)]"
-                    : "bg-[var(--secondary)] text-[var(--muted-foreground)]"
+      {/* Zone B: Borderless live risk scale directly on dark canvas */}
+      <div className="mt-5 flex-none">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-semibold tracking-[0.12em] text-[var(--muted-foreground)] uppercase">
+              {copy.fraudRiskLabel}
+            </div>
+            <div className="mt-1 flex items-baseline gap-2.5">
+              <span
+                className="mono text-[38px] leading-none font-bold tracking-[-0.04em]"
+                style={{ color: riskColor }}
+              >
+                {combinedScore}%
+              </span>
+              {riskDelta !== null && (
+                <motion.span
+                  key={`${combinedScore}-${riskDelta}`}
+                  initial={{ opacity: 0, y: 3 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`mono text-[13px] font-semibold ${
+                    riskDelta > 0 ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"
+                  }`}
+                >
+                  {riskDelta > 0 ? `+${riskDelta}%` : `${riskDelta}%`}
+                </motion.span>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-1 text-right text-[12.5px] leading-tight">
+            <div className="flex items-baseline justify-end gap-1.5">
+              <span className="text-[var(--muted-foreground)]">{copy.algorithmShort}</span>
+              <span
+                className={`mono font-semibold ${
+                  algo.score >= COERCION_ACTIVATION_THRESHOLD
+                    ? "text-[var(--primary)]"
+                    : "text-[var(--foreground)]"
                 }`}
               >
-                {riskDelta > 0 ? `+${riskDelta}%` : `${riskDelta}%`}
-              </motion.span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {isAiPending && (
-              <span className="mono inline-flex items-center gap-1 rounded-full border border-[var(--primary)]/50 bg-[var(--background)] px-2 py-0.5 text-[10px] font-semibold text-[var(--primary)]">
-                <Sparkles className="animate-mirage-blink h-3 w-3" />
-                {copy.aiAnalyzingBadge}
+                {algo.score}%
               </span>
-            )}
-            <span
-              className="mono rounded-[6px] border border-[var(--border)] bg-[var(--background)]/70 px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] uppercase"
-              style={{ color: riskBarColor }}
-            >
-              {riskStatusLabel}
-            </span>
-          </div>
-        </div>
+              <span className="mono text-[11px] text-[var(--muted-foreground)]">&lt;1ms</span>
+            </div>
 
-        {/* Live Probability Track with 65% Threshold Notch */}
-        <div className="relative mt-2">
-          <div className="relative h-3 w-full overflow-hidden rounded-full bg-[var(--background)]">
-            <motion.div
-              className="h-full rounded-full"
-              initial={false}
-              animate={{
-                width: `${combinedScore}%`,
-                backgroundColor: riskBarColor,
-              }}
-              transition={{ type: "spring", stiffness: 240, damping: 28 }}
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute top-0 bottom-0 w-[2px] bg-[var(--foreground)]/75"
-              style={{ left: `${COERCION_ACTIVATION_THRESHOLD}%` }}
-            />
-          </div>
-
-          <div className="mono relative mt-1 flex items-center justify-between text-[9.5px] font-semibold text-[var(--muted-foreground)]">
-            <span>0%</span>
-            <span
-              style={{ left: `${COERCION_ACTIVATION_THRESHOLD}%` }}
-              className={`absolute -translate-x-1/2 whitespace-nowrap ${
-                combinedScore >= COERCION_ACTIVATION_THRESHOLD
-                  ? "text-[var(--primary)]"
-                  : "text-[var(--secondary-foreground)]"
-              }`}
-            >
-              ▲ {copy.thresholdNotchLabel}
-            </span>
-            <span>100%</span>
-          </div>
-        </div>
-
-        <p className="mt-1 truncate text-[11px] text-[var(--secondary-foreground)]">
-          {preset.summary[state.locale]}
-        </p>
-      </div>
-
-      {/* 2-Tier Synchronized Cards */}
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-3 py-2 shadow-[var(--shadow-xs)]">
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-[10px] font-semibold tracking-[0.08em] text-[var(--muted-foreground)] uppercase">
-              {copy.tier1Title}
-            </span>
-            <span
-              className={`mono text-[16px] leading-none font-bold ${
-                algo.score >= COERCION_ACTIVATION_THRESHOLD
-                  ? "text-[var(--primary)]"
-                  : "text-[var(--foreground)]"
-              }`}
-            >
-              {algo.score}%
-            </span>
-          </div>
-          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--background)]">
-            <motion.div
-              className="h-full rounded-full"
-              initial={false}
-              animate={{
-                width: `${algo.score}%`,
-                backgroundColor: getRiskBarColor(
-                  algo.score,
-                  algo.score >= COERCION_ACTIVATION_THRESHOLD,
-                ),
-              }}
-              transition={{ duration: 0.25 }}
-            />
-          </div>
-          <div className="mt-1.5 flex h-[34px] flex-wrap content-start gap-1 overflow-hidden">
-            {visibleAlgoTags.length > 0 ? (
-              <>
-                {visibleAlgoTags.map((tag) => (
-                  <span
-                    key={tag}
-                    title={tag}
-                    className="mono max-w-[215px] truncate rounded-[5px] bg-[var(--secondary)] px-1.5 py-px text-[9.5px] font-medium text-[var(--foreground)]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-                {hiddenAlgoCount > 0 && (
-                  <span className="mono rounded-[5px] border border-[var(--border)] px-1.5 py-px text-[9.5px] font-semibold text-[var(--muted-foreground)]">
-                    +{hiddenAlgoCount}
-                  </span>
-                )}
-              </>
-            ) : (
-              <span className="text-[10.5px] leading-tight text-[var(--muted-foreground)]">
-                {copy.tier1Waiting}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-3 py-2 shadow-[var(--shadow-xs)]">
-          <div className="flex items-center justify-between gap-1">
-            <span className="truncate text-[10px] font-semibold tracking-[0.08em] text-[var(--muted-foreground)] uppercase">
-              {copy.tier2Title}
-            </span>
-            <div className="flex flex-none items-center gap-1.5">
+            <div className="flex items-baseline justify-end gap-1.5">
+              <span className="text-[var(--muted-foreground)]">{copy.haikuShort}</span>
               <span
-                className={`mono rounded-[4px] border px-1 py-px text-[8.5px] font-semibold whitespace-nowrap uppercase ${
-                  isAiPending
-                    ? "animate-mirage-blink border-[var(--primary)] text-[var(--primary)]"
-                    : "border-[var(--border)] bg-[var(--background)] text-[var(--muted-foreground)]"
-                }`}
-              >
-                {getSourceLabel(ai.source, isAiPending, copy)}
-              </span>
-              <span
-                className={`mono text-[16px] leading-none font-bold ${
+                className={`mono font-semibold ${
                   ai.score >= COERCION_ACTIVATION_THRESHOLD
                     ? "text-[var(--primary)]"
                     : "text-[var(--foreground)]"
@@ -474,360 +417,309 @@ export function MiragePanel({
               >
                 {ai.score}%
               </span>
+              {isAiPending && (
+                <span className="animate-mirage-blink text-[11px] font-semibold text-[var(--primary)]">
+                  {copy.analyzingInline}
+                </span>
+              )}
             </div>
           </div>
-          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--background)]">
+        </div>
+
+        {/* Single smooth risk bar with 65% Mirage threshold */}
+        <div className="relative mt-3">
+          <div className="relative h-[6px] w-full overflow-hidden rounded-full bg-[var(--secondary)]">
             <motion.div
               className="h-full rounded-full"
               initial={false}
               animate={{
-                width: `${ai.score}%`,
-                backgroundColor: getRiskBarColor(
-                  ai.score,
-                  ai.score >= COERCION_ACTIVATION_THRESHOLD,
-                ),
+                width: `${combinedScore}%`,
+                backgroundColor:
+                  combinedScore === 0 ? "transparent" : getRiskColor(combinedScore, isMirage, true),
               }}
-              transition={{ duration: 0.35 }}
+              transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
             />
           </div>
-          <p
-            title={ai.reasoning}
-            className="mt-1.5 line-clamp-2 max-h-[29px] overflow-hidden text-[10.5px] leading-[1.35] text-[var(--secondary-foreground)]"
-          >
-            {ai.reasoning}
-          </p>
-        </div>
-      </div>
-
-      {/* 3. Interactive OS Signal Toggles */}
-      <div className="mt-2 flex flex-nowrap items-center justify-between gap-1.5">
-        <button
-          type="button"
-          disabled={isBusy}
-          onClick={() => void (state.call.active ? onEndCall() : onStartCall())}
-          aria-pressed={state.call.active}
-          className={`inline-flex h-[27px] flex-auto items-center justify-center gap-1 rounded-full border px-2 text-[10.5px] font-semibold whitespace-nowrap transition ${
-            state.call.active
-              ? "border-[var(--call-green)]/70 bg-[color-mix(in_srgb,var(--call-green)_16%,var(--card))] text-[var(--foreground)]"
-              : inCooldown
-                ? "border-[var(--primary)]/50 bg-[var(--card)] text-[var(--primary)]"
-                : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-          }`}
-        >
-          <PhoneCall className="h-3 w-3 flex-none" />
-          {inCooldown ? copy.toggleCallCooldown : copy.toggleCallActive}
-        </button>
-
-        <button
-          type="button"
-          disabled={isBusy}
-          onClick={() => void handleToggleUnverifiedCaller()}
-          aria-pressed={signals.unverifiedCaller}
-          className={`inline-flex h-[27px] flex-auto items-center justify-center gap-1 rounded-full border px-2 text-[10.5px] font-semibold whitespace-nowrap transition ${
-            signals.unverifiedCaller
-              ? "border-[var(--primary)]/70 bg-[color-mix(in_oklch,var(--primary)_16%,var(--card))] text-[var(--foreground)]"
-              : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-          }`}
-        >
-          <ShieldAlert className="h-3 w-3 flex-none" />
-          {copy.toggleUnverifiedCaller}
-          <span className="mono text-[9.5px] opacity-75">+10%</span>
-        </button>
-
-        <button
-          type="button"
-          disabled={isBusy}
-          onClick={() => void handleToggleScreenShare()}
-          aria-pressed={isScreenSharing}
-          className={`inline-flex h-[27px] flex-auto items-center justify-center gap-1 rounded-full border px-2 text-[10.5px] font-semibold whitespace-nowrap transition ${
-            isScreenSharing
-              ? "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_22%,var(--card))] text-[var(--foreground)]"
-              : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-          }`}
-        >
-          <MonitorUp className="h-3 w-3 flex-none" />
-          {copy.toggleScreenShare}
-          <span className="mono text-[9.5px] opacity-75">+26%</span>
-        </button>
-
-        <button
-          type="button"
-          disabled={isBusy}
-          onClick={() => void handleToggleIbanPasted()}
-          aria-pressed={signals.clipboardPasteDetected}
-          className={`inline-flex h-[27px] flex-auto items-center justify-center gap-1 rounded-full border px-2 text-[10.5px] font-semibold whitespace-nowrap transition ${
-            signals.clipboardPasteDetected
-              ? "border-[var(--primary)]/70 bg-[color-mix(in_oklch,var(--primary)_16%,var(--card))] text-[var(--foreground)]"
-              : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-          }`}
-        >
-          <ClipboardPaste className="h-3 w-3 flex-none" />
-          {copy.toggleIbanPasted}
-          <span className="mono text-[9.5px] opacity-75">+12%</span>
-        </button>
-      </div>
-
-      {/* 4. Interactive Cue Deck + Custom Input + Compact Live Transcript */}
-      <div className="mt-2.5 flex min-h-0 flex-1 flex-col">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold tracking-[0.12em] text-[var(--muted-foreground)] uppercase">
-              {copy.cueDeckTitle}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-[2px] h-[10px] w-[2px] rounded-full bg-[var(--foreground)]/70"
+            style={{ left: `${COERCION_ACTIVATION_THRESHOLD}%` }}
+          />
+          <div className="mono relative mt-1.5 flex items-center justify-between text-[10px] font-medium text-[var(--muted-foreground)]">
+            <span>0%</span>
+            <span
+              style={{ left: `${COERCION_ACTIVATION_THRESHOLD}%` }}
+              className={`absolute -translate-x-1/2 whitespace-nowrap ${
+                combinedScore >= COERCION_ACTIVATION_THRESHOLD
+                  ? "font-semibold text-[var(--primary)]"
+                  : "text-[var(--muted-foreground)]"
+              }`}
+            >
+              {copy.thresholdShortLabel}
             </span>
-            <span className="mono text-[10px] font-semibold text-[var(--muted-foreground)]">
-              {playedCueCount}/{preset.scriptedChunks.length}
-            </span>
+            <span>100%</span>
           </div>
+        </div>
 
+        {/* Single calm line of human-readable signals (no ALL_CAPS_SNAKE_CASE) */}
+        <p
+          title={humanReasons.length > 0 ? fullReasonsTitle : preset.summary[state.locale]}
+          className={`mt-2.5 truncate text-[12.5px] ${
+            humanReasons.length > 0
+              ? "text-[var(--secondary-foreground)]"
+              : "text-[var(--muted-foreground)]"
+          }`}
+        >
+          {humanReasons.length > 0 ? visibleReasonsText : preset.summary[state.locale]}
+        </p>
+      </div>
+
+      {/* Zone C: Borderless live transcript + compact cue step-director */}
+      <div className="mt-4 flex min-h-0 flex-1 flex-col">
+        {state.call.transcript.length > 0 && (
+          <div
+            ref={transcriptRef}
+            className={`mirage-scroll mb-3 space-y-1.5 overflow-y-auto pr-1 ${
+              showOutcomeBlock ? "max-h-[144px]" : "max-h-[168px]"
+            }`}
+          >
+            {state.call.transcript.map((entry) => {
+              const speakerName =
+                entry.speaker === "caller"
+                  ? copy.speakerCaller
+                  : entry.speaker === "victim"
+                    ? copy.speakerCustomer
+                    : copy.speakerAiDecoy;
+              return (
+                <div
+                  key={entry.id}
+                  className="animate-mirage-rise flex items-baseline gap-2.5 text-[13.5px] leading-[1.4]"
+                >
+                  <b className="w-[68px] flex-none text-[12px] font-semibold text-[var(--muted-foreground)]">
+                    {speakerName}
+                  </b>
+                  <span
+                    className={`min-w-0 flex-1 ${
+                      entry.speaker === "caller"
+                        ? "text-[var(--foreground)]"
+                        : "text-[var(--secondary-foreground)]"
+                    }`}
+                  >
+                    “{entry.text}”
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Compact step director row */}
+        <div className="flex flex-none items-center gap-2">
           <button
             type="button"
             disabled={allCuesPlayed || isBusy}
             onClick={() => void onPlayNextChunk()}
-            className="inline-flex h-[24px] items-center gap-1 rounded-full border border-[var(--primary)]/70 bg-[color-mix(in_oklch,var(--primary)_16%,var(--card))] px-2.5 text-[11px] font-semibold text-[var(--foreground)] transition hover:brightness-110 disabled:opacity-40"
+            className="inline-flex h-[30px] items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 text-[12px] font-semibold text-[var(--foreground)] transition hover:border-[var(--primary)] disabled:opacity-40"
           >
-            <Play className="h-2.5 w-2.5 fill-current" />
-            {allCuesPlayed ? copy.cueAllPlayed : copy.cuePlayNext}
+            {allCuesPlayed ? copy.linesDoneBtn : copy.nextLineBtn}
+            {!allCuesPlayed && <ArrowRight className="h-3.5 w-3.5 text-[var(--primary)]" />}
           </button>
-        </div>
 
-        <div className="mirage-scroll mt-1.5 max-h-[144px] flex-none space-y-1 overflow-y-auto pr-0.5">
-          {preset.scriptedChunks.map((chunk, idx) => {
-            const isPlayed = playedTexts.has(chunk.text);
-            const isNext = idx === state.scriptedChunkIndex;
-            const speakerLabel =
-              chunk.speaker === "caller" ? copy.speakerCaller : copy.speakerCustomer;
-            return (
-              <button
-                key={chunk.id}
-                type="button"
-                disabled={isBusy}
-                onClick={() => void onPlayCue(chunk)}
-                title={chunk.text}
-                className={`flex w-full items-center gap-2 rounded-[10px] border px-2.5 py-1.5 text-left transition ${
-                  isPlayed
-                    ? "border-[var(--border)] bg-[var(--card)]/55 text-[var(--muted-foreground)] hover:border-[var(--primary)]/40"
-                    : isNext
-                      ? "border-[var(--primary)]/60 bg-[var(--card)] text-[var(--foreground)] hover:border-[var(--primary)]"
-                      : "border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] hover:border-[var(--primary)]/60"
-                }`}
-              >
-                <span
-                  className={`mono flex h-4 w-4 flex-none items-center justify-center rounded-full text-[9.5px] font-bold ${
+          <div className="flex items-center gap-1.5">
+            {preset.scriptedChunks.map((chunk, idx) => {
+              const isPlayed = playedTexts.has(chunk.text);
+              const isNext = idx === state.scriptedChunkIndex;
+              const speakerLabel =
+                chunk.speaker === "caller" ? copy.speakerCaller : copy.speakerCustomer;
+              return (
+                <button
+                  key={chunk.id}
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void onPlayCue(chunk)}
+                  title={`${speakerLabel}: “${chunk.text}”`}
+                  aria-label={`${idx + 1}. ${speakerLabel}: ${chunk.text}`}
+                  className={`mono inline-flex h-[28px] w-[28px] items-center justify-center rounded-full border text-[11.5px] font-semibold transition ${
                     isPlayed
-                      ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                      ? "border-[var(--border)] bg-[var(--card)]/60 text-[var(--muted-foreground)] hover:border-[var(--primary)]/50"
                       : isNext
-                        ? "bg-[color-mix(in_oklch,var(--primary)_22%,var(--secondary))] text-[var(--primary)]"
-                        : "bg-[var(--secondary)] text-[var(--muted-foreground)]"
+                        ? "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_18%,var(--card))] text-[var(--foreground)]"
+                        : "border-[var(--border)] bg-transparent text-[var(--muted-foreground)] hover:border-[var(--primary)]/60 hover:text-[var(--foreground)]"
                   }`}
                 >
-                  {isPlayed ? <Check className="h-2.5 w-2.5 stroke-[3]" /> : idx + 1}
-                </span>
+                  {isPlayed ? <Check className="h-3 w-3 stroke-[2.5]" /> : idx + 1}
+                </button>
+              );
+            })}
+          </div>
 
-                <span className="w-[54px] flex-none text-[10.5px] font-semibold text-[var(--muted-foreground)]">
-                  {speakerLabel}
-                </span>
-
-                <span className="min-w-0 flex-1 truncate text-[11.5px]">“{chunk.text}”</span>
-
-                {chunk.autoEnableScreenShare && (
-                  <span className="mono flex-none rounded-[5px] bg-[var(--secondary)] px-1.5 py-px text-[9.5px] font-semibold text-[var(--primary)]">
-                    {copy.cueScreenTag}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <form onSubmit={handleInjectSubmit} className="mt-1.5 flex gap-1.5">
-          <input
-            type="text"
-            value={customLine}
-            onChange={(event) => setCustomLine(event.target.value)}
-            placeholder={copy.cueLivePlaceholder}
-            className="h-8 min-w-0 flex-1 rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2.5 text-[11.5px] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)] focus:outline-none"
-          />
           <button
-            type="submit"
-            disabled={isBusy || customLine.trim().length === 0}
-            className="inline-flex h-8 items-center gap-1 rounded-[10px] border border-[var(--border)] bg-[var(--secondary)] px-2.5 text-[11.5px] font-semibold text-[var(--foreground)] transition hover:border-[var(--primary)] disabled:opacity-45"
+            type="button"
+            onClick={() => setShowCustomInput((prev) => !prev)}
+            aria-expanded={showCustomInput}
+            className={`ml-auto text-[12px] font-medium transition ${
+              showCustomInput
+                ? "text-[var(--primary)]"
+                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            }`}
           >
-            <Send className="h-3 w-3" />
-            {copy.injectSend}
+            {copy.customLineBtn}
           </button>
-        </form>
-
-        <div
-          ref={transcriptRef}
-          className="mirage-scroll mt-1.5 min-h-0 flex-1 overflow-y-auto rounded-[10px] border border-[var(--border)] bg-[var(--card)]/60 px-2.5 py-1.5"
-        >
-          {state.call.transcript.length === 0 ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">{copy.transcriptIdleHint}</p>
-          ) : (
-            <div className="space-y-1">
-              {state.call.transcript.map((entry) => {
-                const speakerName =
-                  entry.speaker === "caller"
-                    ? copy.speakerCaller
-                    : entry.speaker === "victim"
-                      ? copy.speakerCustomer
-                      : copy.speakerAiDecoy;
-                return (
-                  <div
-                    key={entry.id}
-                    className="animate-mirage-rise flex items-baseline gap-2 text-[11px] leading-[1.3]"
-                  >
-                    <b className="w-[54px] flex-none font-semibold text-[var(--muted-foreground)]">
-                      {speakerName}
-                    </b>
-                    <span
-                      className={`min-w-0 flex-1 ${
-                        entry.speaker === "caller"
-                          ? "text-[var(--foreground)]"
-                          : "text-[var(--secondary-foreground)]"
-                      }`}
-                    >
-                      “{entry.text}”
-                    </span>
-                    {entry.flaggedTactics.length > 0 && (
-                      <span className="mono flex-none rounded bg-[var(--secondary)] px-1 py-px text-[9px] text-[var(--primary)]">
-                        {entry.flaggedTactics[0]}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
+
+        {/* Optional expandable custom phrase input */}
+        {showCustomInput && (
+          <form onSubmit={handleInjectSubmit} className="animate-mirage-fade mt-2.5 flex gap-2">
+            <input
+              ref={customInputRef}
+              type="text"
+              value={customLine}
+              onChange={(event) => setCustomLine(event.target.value)}
+              placeholder={copy.cueLivePlaceholder}
+              className="h-[34px] min-w-0 flex-1 rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 text-[12.5px] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)] focus:outline-none"
+            />
+            <button
+              type="submit"
+              disabled={isBusy || customLine.trim().length === 0}
+              className="inline-flex h-[34px] items-center gap-1.5 rounded-[10px] border border-[var(--border)] bg-[var(--secondary)] px-3 text-[12px] font-semibold text-[var(--foreground)] transition hover:border-[var(--primary)] disabled:opacity-45"
+            >
+              <Send className="h-3 w-3" />
+              {copy.injectSend}
+            </button>
+          </form>
+        )}
+
+        {/* Quiet clickable preview of next scripted line while no outcome block yet */}
+        {!showOutcomeBlock && !showCustomInput && nextChunk && (
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={() => void onPlayCue(nextChunk)}
+            title={nextChunk.text}
+            className="mt-2.5 flex w-full items-baseline gap-1.5 text-left text-[12px] text-[var(--muted-foreground)] transition hover:text-[var(--secondary-foreground)] disabled:opacity-45"
+          >
+            <span className="flex-none font-semibold">{copy.nextPreviewPrefix}</span>
+            <span className="min-w-0 truncate">“{nextChunk.text}”</span>
+          </button>
+        )}
       </div>
 
-      {/* 5. Bottom Outcome & Protection Block (Real vs Mirage + Honeytrap) */}
-      <div className="mt-auto pt-2">
-        <div className="flex items-end justify-between gap-2">
+      {/* Zone D: Borderless AED 0 punchline + SINGLE accented verdict card */}
+      {showOutcomeBlock && (
+        <div className="animate-mirage-fade mt-auto flex-none pt-3">
           <div>
-            <div className="text-[10px] font-semibold tracking-[0.12em] text-[var(--muted-foreground)] uppercase">
+            <div className="text-[11px] font-semibold tracking-[0.12em] text-[var(--muted-foreground)] uppercase">
               {copy.actuallyTransferred}
             </div>
             <div
-              className={`mono mt-0.5 text-[34px] leading-none font-bold tracking-[-0.04em] ${transferredValueColor}`}
+              className={`mono mt-1.5 text-[48px] leading-none font-bold tracking-[-0.04em] ${transferredValueColor}`}
             >
               {formatAed(actuallyTransferred, preset.currency, 0)}
             </div>
-          </div>
 
-          <div className="flex flex-nowrap items-center justify-end gap-1.5">
-            {customerNotTold && (
-              <span className="inline-flex items-center rounded-full border border-[var(--primary)]/60 bg-[var(--card)] px-2 py-1 text-[10px] font-semibold whitespace-nowrap text-[var(--primary)]">
-                {copy.signalCustomerNotTold}
+            <div className="mt-2 flex flex-wrap items-baseline gap-x-2 text-[13.5px] text-[var(--secondary-foreground)]">
+              <span>
+                {copy.realBalancePrefix}{" "}
+                <b className="mono font-semibold text-[var(--foreground)]">
+                  {formatAed(currentRealTotal, preset.currency, 0)}
+                </b>
               </span>
-            )}
-            <button
-              type="button"
-              onClick={onToggleGuardianView}
-              aria-pressed={phonePersona === "guardian"}
-              title={
-                phonePersona === "guardian" ? copy.familyAlertBackTip : copy.familyAlertOpenTip
-              }
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10.5px] font-semibold whitespace-nowrap transition hover:brightness-110 ${
-                phonePersona === "guardian"
-                  ? "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_24%,var(--card))] text-[var(--foreground)] ring-1 ring-[var(--primary)]/50"
-                  : state.trustedAlertSent
-                    ? "border-[var(--primary)]/60 bg-[color-mix(in_oklch,var(--primary)_14%,var(--card))] text-[var(--primary)]"
-                    : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-              }`}
-            >
-              {state.trustedAlertSent ? (
-                <BellRing className="h-3.5 w-3.5" />
-              ) : (
-                <ShieldCheck className="h-3.5 w-3.5" />
+              {hasDecoyBalanceDiff && (
+                <span className="text-[var(--muted-foreground)]">
+                  · {copy.phoneShowsInlinePrefix}{" "}
+                  <span className="mono text-[var(--secondary-foreground)]">
+                    {formatAed(phoneDisplayedTotal, preset.currency, 0)}
+                  </span>
+                </span>
               )}
-              {state.trustedAlertSent ? copy.familyAlertSent : copy.familyAlertStandby}
-            </button>
-          </div>
-        </div>
+            </div>
 
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-3 py-2 shadow-[var(--shadow-xs)]">
-            <div className="text-[9.5px] font-semibold tracking-[0.1em] text-[var(--muted-foreground)] uppercase">
-              {isMirage ? copy.realBalanceLocked : copy.realBalanceLive}
-            </div>
-            <div className="mono mt-0.5 text-[15.5px] font-semibold tracking-[-0.02em] text-[var(--foreground)]">
-              {formatAed(currentRealTotal, preset.currency, 0)}
-            </div>
-            {realEveryday && realVault && (
-              <div className="mono mt-0.5 text-[10px] text-[var(--muted-foreground)]">
-                {copy.checkingShort} {formatNumber(realEveryday.balance, 0)} · {copy.vaultShort}{" "}
-                {formatNumber(realVault.balance, 0)}
+            {(isMirage || state.capturedMules.length > 0 || state.trustedAlertSent) && (
+              <div className="mt-1.5 flex items-center justify-between gap-2 text-[11.5px]">
+                <div
+                  title={state.capturedMules.map((m) => `${m.label}: ${m.value}`).join(" | ")}
+                  className="min-w-0 truncate text-[var(--muted-foreground)]"
+                >
+                  {state.capturedMules.length > 0 ? (
+                    <>
+                      <span>{copy.capturedMulesPrefix} </span>
+                      <span className="mono font-medium text-[var(--foreground)]">
+                        {state.capturedMules
+                          .map(
+                            (mule) =>
+                              `#${mule.attemptNumber} ${
+                                mule.attemptNumber === 1
+                                  ? copy.guardianMuleCb412
+                                  : copy.guardianMuleDecoy
+                              } ${shortIban(mule.value)}`,
+                          )
+                          .join(" · ")}
+                      </span>
+                    </>
+                  ) : (
+                    <span>{copy.honeytrapReadyInline}</span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onToggleGuardianView}
+                  aria-pressed={phonePersona === "guardian"}
+                  title={
+                    phonePersona === "guardian" ? copy.familyAlertBackTip : copy.familyAlertOpenTip
+                  }
+                  className="flex-none font-semibold whitespace-nowrap text-[var(--primary)] transition hover:underline"
+                >
+                  {copy.familyGuardianLink}
+                </button>
               </div>
             )}
           </div>
 
-          <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-3 py-2 shadow-[var(--shadow-xs)]">
-            <div className="text-[9.5px] font-semibold tracking-[0.1em] text-[var(--muted-foreground)] uppercase">
-              {isMirage ? copy.phoneShowsMirage : copy.phoneShowsLive}
+          {/* The ONE accented verdict card on the left panel */}
+          <div
+            className={`mt-3.5 rounded-[var(--radius-sm)] border px-4 py-3 ${
+              isMirage
+                ? "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_14%,var(--card))] shadow-[var(--shadow-sm)]"
+                : "border-[var(--border)] bg-[var(--card)]"
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <i
+                aria-hidden="true"
+                className={`h-[9px] w-[9px] flex-none rounded-full ${
+                  isMirage
+                    ? "bg-[var(--primary)] shadow-[0_0_0_5px_color-mix(in_oklch,var(--primary)_25%,transparent)]"
+                    : "bg-[var(--call-green)]"
+                }`}
+              />
+              <span className="text-[16px] font-bold tracking-[-0.01em] text-[var(--foreground)]">
+                {isMirage ? copy.verdictActive : copy.verdictLegitTitle}
+              </span>
+              <span className="ml-auto text-[10.5px] font-semibold tracking-[0.08em] text-[var(--muted-foreground)] uppercase">
+                {verdictEngineLabel}
+              </span>
             </div>
-            <div className="mono mt-0.5 text-[15.5px] font-semibold tracking-[-0.02em] text-[var(--foreground)]">
-              {formatAed(phoneDisplayedTotal, preset.currency, 0)}
-            </div>
-            <div className="mono mt-0.5 text-[10px] text-[var(--muted-foreground)]">
-              {isRevealed
-                ? copy.restoredAfterReveal
-                : decoyDelta > 0
-                  ? `−${formatAed(decoyDelta, preset.currency, 0)} ${copy.decoyDeltaSuffix}`
-                  : isMirage
-                    ? copy.shadowSynced
-                    : copy.liveLedgerSub}
-            </div>
-          </div>
-        </div>
 
-        <div className="mt-1.5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 shadow-[var(--shadow-xs)]">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[9.5px] font-semibold tracking-[0.12em] text-[var(--muted-foreground)] uppercase">
-              {copy.honeytrapLabel}
-            </span>
-            <span
-              className={`mono rounded-[5px] border border-[var(--border)] bg-[var(--background)] px-1.5 py-px text-[9.5px] font-semibold ${
-                isSafeCase && !isMirage ? "text-[var(--call-green)]" : "text-[var(--primary)]"
-              }`}
-            >
-              {isSafeCase && !isMirage
-                ? copy.caseBadgeSafe
-                : getStageLabel(state.honeytrapStage, copy)}
-            </span>
-          </div>
-
-          {state.capturedMules.length > 0 ? (
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {state.capturedMules.map((mule) => (
-                <span
-                  key={mule.id}
-                  title={`${mule.label} · ${mule.value}`}
-                  className="mono inline-flex items-center gap-1 rounded-[6px] border border-[var(--border)] bg-[var(--background)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--foreground)]"
-                >
-                  <span className="font-bold text-[var(--primary)]">#{mule.attemptNumber}</span>
-                  <span className="text-[var(--muted-foreground)]">
-                    {mule.attemptNumber === 1 ? copy.muleAttempt1Tag : copy.muleAttempt2Tag}
-                  </span>
-                  <span>· {shortIban(mule.value)}</span>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-0.5 text-[11px] text-[var(--muted-foreground)]">
-              {isSafeCase && !isMirage ? copy.safeControlLedgerNote : copy.honeytrapArmedHint}
+            <p className="mt-1.5 line-clamp-2 text-[13px] leading-[1.4] text-[var(--secondary-foreground)]">
+              {verdictReason}
             </p>
-          )}
-        </div>
 
-        {isRevealed && (
-          <div className="animate-mirage-rise mt-1 text-[11.5px] font-semibold text-[var(--primary)]">
-            {copy.customerNotifiedNote}
-            {isCallerBlocked ? ` ${copy.callerBlockedNote}` : ""}
+            {customerNotTold && (
+              <div className="mt-1.5 text-[11.5px] font-semibold text-[var(--primary)]">
+                {copy.signalCustomerNotTold}
+              </div>
+            )}
+
+            {isRevealed && (
+              <div className="mt-1.5 text-[11.5px] font-semibold text-[var(--primary)]">
+                {copy.customerNotifiedNote}
+                {isCallerBlocked ? ` ${copy.callerBlockedNote}` : ""}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }

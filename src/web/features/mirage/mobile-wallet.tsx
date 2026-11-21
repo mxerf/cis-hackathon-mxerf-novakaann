@@ -1,4 +1,13 @@
-import { ArrowLeftRight, CreditCard, Home, LayoutGrid, MessageSquare } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Cast,
+  ChevronUp,
+  CreditCard,
+  Home,
+  LayoutGrid,
+  MessageSquare,
+  Phone,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getVisibleAccounts,
@@ -122,11 +131,17 @@ export function MobileWallet({
   const [showLockPush, setShowLockPush] = useState(false);
   const [hasRevealed, setHasRevealed] = useState(false);
   const [isCallerBlocked, setIsCallerBlocked] = useState(false);
+  const [hasEverShared, setHasEverShared] = useState(isScreenSharing);
+  const [isCallBannerExpanded, setIsCallBannerExpanded] = useState(true);
+  const [isStillSharing, setIsStillSharing] = useState(false);
+  const [isCallCardExpanded, setIsCallCardExpanded] = useState(false);
+  const [morphCallCard, setMorphCallCard] = useState(false);
   const [toastText, setToastText] = useState<string | null>(null);
   const [callSeconds, setCallSeconds] = useState(0);
 
   const toastTimerRef = useRef<number | null>(null);
   const callStartRef = useRef<number | null>(state.call.active ? Date.now() : null);
+  const prevScreenSharingRef = useRef<boolean>(isScreenSharing);
 
   const showToast = useCallback((message: string) => {
     setToastText(message);
@@ -171,8 +186,23 @@ export function MobileWallet({
   }, [state.call.active]);
 
   useEffect(() => {
-    if (isScreenSharing && activeSheet === "details") {
-      setActiveSheet(null);
+    const wasSharing = prevScreenSharingRef.current;
+    prevScreenSharingRef.current = isScreenSharing;
+
+    if (isScreenSharing) {
+      setHasEverShared(true);
+      setIsCallCardExpanded(false);
+      setMorphCallCard(false);
+      if (!wasSharing) {
+        setIsCallBannerExpanded(true);
+      }
+      if (activeSheet === "details") {
+        setActiveSheet(null);
+      }
+    } else if (wasSharing) {
+      setIsStillSharing(false);
+      setIsCallCardExpanded(false);
+      setMorphCallCard(true);
     }
   }, [activeSheet, isScreenSharing]);
 
@@ -186,8 +216,9 @@ export function MobileWallet({
 
     if (canRevealNow) {
       setHasRevealed(true);
-      setShowLockPush(true);
-      setActiveSheet(null);
+      setShowLockPush(false);
+      setScreen("home");
+      setActiveSheet("revealed_safe");
       onRevealChange?.(true);
     }
   }, [
@@ -325,7 +356,6 @@ export function MobileWallet({
       setActiveSheet((prev) => (prev === "details" ? null : prev));
     }
     await onUpdateSignals({ screenSharing: next });
-    showToast(next ? copy.toastSharingStarted : copy.toastSharingStopped);
   }
 
   async function handleEndCallFromSheet() {
@@ -377,6 +407,13 @@ export function MobileWallet({
   const showBottomTabs = !isLockView && (screen === "home" || screen === "chat");
   const callDuration = formatDuration(callSeconds);
 
+  const showCallCard =
+    state.call.active && !isScreenSharing && (hasEverShared || state.receipts.length > 0);
+  const showExpandedSharingBar = !showCallCard && isScreenSharing && isCallBannerExpanded;
+  const showCompactCallStrip =
+    !showCallCard && !showExpandedSharingBar && (state.call.active || isScreenSharing);
+  const compactForCallBar = showExpandedSharingBar || showCallCard;
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
@@ -406,17 +443,119 @@ export function MobileWallet({
         />
       ) : (
         <>
-          {state.call.active && (
+          {/* v2 Upgrade 2: Graphite Call Card with round red End call button */}
+          {showCallCard && (
+            <div
+              className={`mx-3.5 mt-0.5 flex-none rounded-[18px] border border-white/10 bg-[#2b2d33] px-3 py-2 text-white ${
+                morphCallCard ? "animate-mirage-morph" : ""
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsCallCardExpanded((prev) => !prev)}
+                  aria-expanded={isCallCardExpanded}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left text-white"
+                >
+                  <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-white/12 text-[#3ddc97]">
+                    <Phone className="h-[17px] w-[17px] fill-current" />
+                  </span>
+                  <span className="min-w-0">
+                    <b className="block truncate text-[13.5px] leading-tight font-bold">
+                      {copy.callcardStillActive} ·{" "}
+                      <span className="mono font-medium">{callDuration}</span>
+                    </b>
+                    <small className="mt-0.5 block truncate text-[12px] text-white/62">
+                      {copy.callcardSharingOff}
+                    </small>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void handleEndCallFromSheet()}
+                  aria-label={copy.endCall}
+                  className="flex flex-none flex-col items-center gap-0.5 px-1 text-[10.5px] font-bold text-white transition hover:brightness-110 disabled:opacity-45"
+                >
+                  <span className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[#e5383b] text-white">
+                    <Phone className="h-[17px] w-[17px] rotate-[135deg] fill-current" />
+                  </span>
+                  <span>{copy.endCall}</span>
+                </button>
+              </div>
+
+              {isCallCardExpanded && (
+                <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
+                  <span className="mono text-[12px] text-white/70">{state.call.callerNumber}</span>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => void handleToggleSharing()}
+                    className="h-[28px] rounded-full bg-white/14 px-3.5 text-[12px] font-bold text-white transition hover:bg-white/22 disabled:opacity-45"
+                  >
+                    {copy.shareScreen}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* v2 Upgrade 1: Expandable green screen-sharing card (callbar) */}
+          {showExpandedSharingBar && (
+            <div className="animate-mirage-fade mx-3.5 mt-0.5 flex-none rounded-[20px] bg-[var(--call-green)] px-3.5 pt-2.5 pb-3 text-white">
+              <div className="flex items-center gap-2 text-[14.5px]">
+                <Cast className="h-[17px] w-[17px] flex-none" />
+                <b className="min-w-0 flex-1 truncate font-bold">
+                  {isStillSharing || !state.call.active
+                    ? copy.callbarStillSharingTitle
+                    : copy.callbarSharingTitle}
+                </b>
+                <button
+                  type="button"
+                  onClick={() => setIsCallBannerExpanded(false)}
+                  aria-label={copy.callbarCollapseAria}
+                  className="flex h-[28px] w-[28px] flex-none items-center justify-center rounded-full bg-black/18 text-white transition hover:bg-black/28"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-0.5 mb-2.5 ml-[25px] text-[12.5px] opacity-90">
+                {state.call.active ? copy.callbarSharingSub : copy.callbarEndedSub}
+              </div>
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => void handleToggleSharing()}
+                className="h-[36px] w-full rounded-full bg-white text-[14px] font-bold text-[#0b5c36] transition hover:brightness-95 disabled:opacity-45"
+              >
+                {copy.stopSharing}
+              </button>
+            </div>
+          )}
+
+          {/* Compact green call strip (when callbar collapsed or pre-share call) */}
+          {showCompactCallStrip && (
             <div className="mx-3.5 mt-0.5 flex h-[30px] flex-none items-center gap-2 rounded-full bg-[var(--call-green)] px-3 text-[12px] font-semibold text-white">
               <button
                 type="button"
-                onClick={() => setActiveSheet("call")}
-                aria-label="Call options"
+                onClick={() => {
+                  if (isScreenSharing) {
+                    setIsCallBannerExpanded(true);
+                  } else {
+                    setActiveSheet("call");
+                  }
+                }}
+                aria-label={isScreenSharing ? copy.callbarExpandAria : "Call options"}
                 className="flex h-full min-w-0 items-center gap-1.5 text-left text-white"
               >
                 <span className="animate-mirage-blink h-[7px] w-[7px] flex-none rounded-full bg-white" />
-                <span className="truncate">{state.call.callerNumber}</span>
-                <span className="mono font-medium opacity-95">{callDuration}</span>
+                <span className="truncate">
+                  {state.call.active ? state.call.callerNumber : copy.chipCallEnded}
+                </span>
+                {state.call.active && (
+                  <span className="mono font-medium opacity-95">{callDuration}</span>
+                )}
                 <span className="text-[10px] opacity-85">▾</span>
               </button>
 
@@ -428,7 +567,7 @@ export function MobileWallet({
                   className="ml-auto flex flex-none items-center gap-1.5 rounded-full bg-black/25 px-2.5 py-0.5 text-[11px] font-bold text-white transition hover:bg-black/35"
                 >
                   <span className="h-[6px] w-[6px] rounded-full bg-[var(--destructive)]" />
-                  {copy.stopSharing}
+                  {copy.callpillSharingStop}
                 </button>
               ) : (
                 <button
@@ -443,7 +582,11 @@ export function MobileWallet({
             </div>
           )}
 
-          <div className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-4">
+          <div
+            className={`flex min-h-0 flex-1 flex-col px-4 pb-4 ${
+              compactForCallBar ? "pt-2" : "pt-3"
+            }`}
+          >
             {screen === "home" && (
               <WalletHome
                 locale={state.locale}
@@ -452,6 +595,7 @@ export function MobileWallet({
                 receipts={state.receipts}
                 isScreenSharing={isScreenSharing}
                 isStoppedRevealed={isStoppedRevealed}
+                compactForCallBar={compactForCallBar}
                 recipientDisplayName={recipientDisplayName}
                 onSelectAccount={(id) => {
                   setSelectedAccountId(id);
@@ -468,6 +612,7 @@ export function MobileWallet({
                   setSelectedReceipt(receipt);
                   setScreen("complete");
                 }}
+                onOpenWhatHappened={() => setScreen("happened")}
                 onShowToast={showToast}
               />
             )}
@@ -483,6 +628,7 @@ export function MobileWallet({
                 suggestedMules={preset.suggestedMules}
                 highlightBackupMule={highlightBackupMule}
                 isScreenSharing={isScreenSharing}
+                compactForCallBar={compactForCallBar}
                 onBack={() => setScreen("home")}
                 onCycleFromAccount={handleCycleFromAccount}
                 onOpenRecipientPicker={() => setActiveSheet("recipient_picker")}
@@ -501,6 +647,7 @@ export function MobileWallet({
                 amount={Number(amountInput) || 0}
                 isScreenSharing={isScreenSharing}
                 isSubmitting={isSubmittingTransfer}
+                compactForCallBar={compactForCallBar}
                 onBack={() => setScreen("send")}
                 onConfirm={() => void handleConfirmTransfer()}
               />
@@ -514,8 +661,13 @@ export function MobileWallet({
                 shownBalance={fromAccount?.balance ?? activeAccount?.balance ?? 0}
                 currency={latestReceipt.currency}
                 isStoppedRevealed={isStoppedRevealed}
+                compactForCallBar={compactForCallBar}
                 onSeeWhatHappened={() => setScreen("happened")}
                 onDone={() => {
+                  if (state.call.active && isScreenSharing) {
+                    setIsStillSharing(true);
+                    setIsCallBannerExpanded(true);
+                  }
                   setRecipientValue("");
                   setRecipientLabel("");
                   setAmountInput("");

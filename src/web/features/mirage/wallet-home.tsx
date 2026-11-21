@@ -1,6 +1,6 @@
 import { FileText, Lock, Plus, QrCode, Search, ShieldCheck } from "lucide-react";
 import type { Account, DecoyReceipt, Locale } from "../../../shared/mirage-types.ts";
-import { formatNumber, getInitials, getUiCopy } from "../../lib/ui-copy.ts";
+import { formatAed, formatNumber, getInitials, getUiCopy } from "../../lib/ui-copy.ts";
 
 export const ACCOUNT_DETAILS_MAP = {
   checking: {
@@ -59,12 +59,14 @@ export type WalletHomeProps = {
   receipts: DecoyReceipt[];
   isScreenSharing: boolean;
   isStoppedRevealed: boolean;
+  compactForCallBar?: boolean;
   recipientDisplayName: (value: string) => string;
   onSelectAccount: (accountId: string) => void;
   onOpenDetails: () => void;
   onOpenSend: () => void;
   onOpenStatements: () => void;
   onOpenReceipt: (receipt: DecoyReceipt) => void;
+  onOpenWhatHappened: () => void;
   onShowToast: (message: string) => void;
 };
 
@@ -75,12 +77,14 @@ export function WalletHome({
   receipts,
   isScreenSharing,
   isStoppedRevealed,
+  compactForCallBar = false,
   recipientDisplayName,
   onSelectAccount,
   onOpenDetails,
   onOpenSend,
   onOpenStatements,
   onOpenReceipt,
+  onOpenWhatHappened,
   onShowToast,
 }: WalletHomeProps) {
   const copy = getUiCopy(locale);
@@ -101,7 +105,7 @@ export function WalletHome({
         <button
           key={`${receipt.refCode}-${receipt.createdAt}`}
           type="button"
-          onClick={() => onOpenReceipt(receipt)}
+          onClick={onOpenWhatHappened}
           className="flex w-full items-center gap-3 border-b border-[var(--border)] py-2.5 text-left text-[14px] transition hover:opacity-90"
         >
           <div className="flex h-9 w-9 flex-none items-center justify-center rounded-[12px] bg-[var(--accent)] text-[var(--primary)]">
@@ -109,10 +113,15 @@ export function WalletHome({
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate font-semibold text-[var(--foreground)]">
-              <span className="font-bold text-[var(--primary)]">{copy.transferBlocked}</span> ·{" "}
-              {label}
+              {copy.transferToPrefix} {label}
             </div>
-            <div className="text-[12.5px] text-[var(--muted-foreground)]">{copy.noMoneyLeft}</div>
+            <div className="text-[12.5px] text-[var(--muted-foreground)]">
+              {copy.todayStoppedPrefix}{" "}
+              <span className="font-bold text-[var(--primary)]">{copy.stoppedTag}</span>
+            </div>
+          </div>
+          <div className="mono ml-auto text-[13.5px] font-semibold text-[var(--foreground)]">
+            {formatAed(0, receipt.currency, 0)}
           </div>
         </button>
       );
@@ -143,17 +152,21 @@ export function WalletHome({
 
   return (
     <div className="animate-mirage-fade flex min-h-0 flex-1 flex-col">
-      <div className="mb-3 flex items-center gap-2.5">
-        <div className="flex h-[40px] w-[40px] flex-none items-center justify-center rounded-full bg-[var(--accent)] text-[13.5px] font-bold text-[var(--accent-foreground)]">
-          LA
+      {!compactForCallBar && (
+        <div className="mb-3 flex items-center gap-2.5">
+          <div className="flex h-[40px] w-[40px] flex-none items-center justify-center rounded-full bg-[var(--accent)] text-[13.5px] font-bold text-[var(--accent-foreground)]">
+            LA
+          </div>
+          <div className="flex h-[40px] flex-1 items-center gap-2 rounded-full bg-[var(--card)] px-3.5 text-[14.5px] text-[var(--muted-foreground)]">
+            <Search className="h-4 w-4" />
+            <span>{copy.searchPlaceholder}</span>
+          </div>
         </div>
-        <div className="flex h-[40px] flex-1 items-center gap-2 rounded-full bg-[var(--card)] px-3.5 text-[14.5px] text-[var(--muted-foreground)]">
-          <Search className="h-4 w-4" />
-          <span>{copy.searchPlaceholder}</span>
-        </div>
-      </div>
+      )}
 
-      <div className="rounded-[28px] bg-[var(--card)] px-4 py-4">
+      <div
+        className={`rounded-[28px] bg-[var(--card)] px-4 ${compactForCallBar ? "py-3" : "py-4"}`}
+      >
         <div className="flex items-center justify-between gap-1.5">
           <div
             title={activeAccount.name}
@@ -231,18 +244,24 @@ export function WalletHome({
       <button
         type="button"
         onClick={onOpenSend}
-        className="mt-3 h-[52px] w-full flex-none rounded-[var(--radius-md)] bg-[var(--primary)] text-[16.5px] font-bold text-[var(--primary-foreground)] shadow-[var(--shadow-xs)] transition hover:brightness-105 active:scale-[0.99]"
+        className={`w-full flex-none rounded-[var(--radius-md)] bg-[var(--primary)] text-[16.5px] font-bold text-[var(--primary-foreground)] shadow-[var(--shadow-xs)] transition hover:brightness-105 active:scale-[0.99] ${
+          compactForCallBar ? "mt-2.5 h-[48px]" : "mt-3 h-[52px]"
+        }`}
       >
         {copy.sendMoney}
       </button>
 
-      <div className="my-3 flex justify-around px-1">
+      <div className={`flex justify-around px-1 ${compactForCallBar ? "my-2" : "my-3"}`}>
         <button
           type="button"
           onClick={() => onShowToast(copy.toastTopUp)}
           className="flex w-[76px] flex-col items-center gap-1.5 text-[12px] font-medium text-[var(--foreground)] transition hover:opacity-90"
         >
-          <span className="flex h-[50px] w-[50px] items-center justify-center rounded-full bg-[var(--card)]">
+          <span
+            className={`flex items-center justify-center rounded-full bg-[var(--card)] ${
+              compactForCallBar ? "h-[44px] w-[44px]" : "h-[50px] w-[50px]"
+            }`}
+          >
             <Plus className="h-5 w-5" />
           </span>
           {copy.actionTopUp}
@@ -253,7 +272,11 @@ export function WalletHome({
           onClick={() => onShowToast(copy.toastScan)}
           className="flex w-[76px] flex-col items-center gap-1.5 text-[12px] font-medium text-[var(--foreground)] transition hover:opacity-90"
         >
-          <span className="flex h-[50px] w-[50px] items-center justify-center rounded-full bg-[var(--card)]">
+          <span
+            className={`flex items-center justify-center rounded-full bg-[var(--card)] ${
+              compactForCallBar ? "h-[44px] w-[44px]" : "h-[50px] w-[50px]"
+            }`}
+          >
             <QrCode className="h-5 w-5" />
           </span>
           {copy.actionScan}
@@ -264,7 +287,11 @@ export function WalletHome({
           onClick={onOpenStatements}
           className="flex w-[76px] flex-col items-center gap-1.5 text-[12px] font-medium text-[var(--foreground)] transition hover:opacity-90"
         >
-          <span className="flex h-[50px] w-[50px] items-center justify-center rounded-full bg-[var(--card)]">
+          <span
+            className={`flex items-center justify-center rounded-full bg-[var(--card)] ${
+              compactForCallBar ? "h-[44px] w-[44px]" : "h-[50px] w-[50px]"
+            }`}
+          >
             <FileText className="h-5 w-5" />
           </span>
           {copy.actionStatements}
@@ -272,28 +299,42 @@ export function WalletHome({
       </div>
 
       {isScreenSharing ? (
-        <div className="flex-none rounded-[28px] bg-[var(--card)] px-5 py-3.5">
+        <div
+          className={`flex-none rounded-[28px] bg-[var(--card)] px-5 ${
+            compactForCallBar ? "py-2.5" : "py-3.5"
+          }`}
+        >
           {latestReceipt && renderReceiptRow(latestReceipt)}
-          <div className={`flex items-center gap-3 ${latestReceipt ? "pt-3" : "py-1"}`}>
+          <div className={`flex items-center gap-3 ${latestReceipt ? "pt-2.5" : "py-1"}`}>
             <div className="flex h-9 w-9 flex-none items-center justify-center rounded-[12px] bg-[var(--secondary)] text-[var(--muted-foreground)]">
               <Lock className="h-4 w-4" />
             </div>
             <div>
-              <div className="text-[15px] font-bold text-[var(--foreground)]">
+              <div className="text-[14.5px] font-bold text-[var(--foreground)]">
                 {latestReceipt ? copy.earlierTransactions : copy.transactionsTitle}
               </div>
-              <div className="text-[13px] text-[var(--muted-foreground)]">
+              <div className="text-[12.5px] text-[var(--muted-foreground)]">
                 {copy.hiddenWhileSharing}
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-hidden rounded-[28px] bg-[var(--card)] px-5 pt-4 pb-2">
-          <h4 className="m-0 text-[17px] font-extrabold text-[var(--foreground)]">
-            {copy.transactionsTitle}
-          </h4>
-          <div className="text-[13px] text-[var(--muted-foreground)]">{copy.spendingSubtitle}</div>
+        <div
+          className={`min-h-0 flex-1 overflow-hidden rounded-[28px] bg-[var(--card)] px-5 pb-2 ${
+            compactForCallBar ? "pt-2" : "pt-4"
+          }`}
+        >
+          {!compactForCallBar && (
+            <>
+              <h4 className="m-0 text-[17px] font-extrabold text-[var(--foreground)]">
+                {copy.transactionsTitle}
+              </h4>
+              <div className="text-[13px] text-[var(--muted-foreground)]">
+                {copy.spendingSubtitle}
+              </div>
+            </>
+          )}
 
           <div className="mt-1">
             {latestReceipt && renderReceiptRow(latestReceipt)}

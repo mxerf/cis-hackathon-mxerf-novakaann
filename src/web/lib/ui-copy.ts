@@ -14,6 +14,10 @@ export type UiCopy = {
   reset: string;
   liveHaikuLabel: string;
   callerVoiceLabel: string;
+  controlsLabel: string;
+  openMobileLabel: string;
+  languageLabel: string;
+  connectionLabel: string;
   personaAriaLabel: string;
   personaVictim: string;
   personaGuardian: string;
@@ -269,6 +273,50 @@ export type UiCopy = {
   guardianHold24hActive: string;
   guardianFalseAlarm: string;
   guardianFalseAlarmToast: string;
+
+  statusStandby: string;
+  statusMonitoring: string;
+  statusMirageActive: string;
+  chipCallActive: string;
+  chipCallEnded: string;
+  chipCallCooldown: string;
+  chipScreenSharing: string;
+  chipUnverified: string;
+  chipIbanPasted: string;
+  chipTipCall: string;
+  chipTipScreen: string;
+  chipTipUnverified: string;
+  chipTipIban: string;
+  fraudRiskLabel: string;
+  algorithmShort: string;
+  haikuShort: string;
+  analyzingInline: string;
+  thresholdShortLabel: string;
+  nextLineBtn: string;
+  linesDoneBtn: string;
+  customLineBtn: string;
+  nextPreviewPrefix: string;
+  realBalancePrefix: string;
+  phoneShowsInlinePrefix: string;
+  capturedMulesPrefix: string;
+  honeytrapReadyInline: string;
+  familyGuardianLink: string;
+  verdictLegitTitle: string;
+  verdictEngineBoth: string;
+  verdictEngineHaiku: string;
+  verdictEngineAlgo: string;
+  callbarSharingTitle: string;
+  callbarStillSharingTitle: string;
+  callbarSharingSub: string;
+  callbarEndedSub: string;
+  callbarInProgressTitle: string;
+  callbarCollapseAria: string;
+  callbarExpandAria: string;
+  callpillSharingStop: string;
+  callcardStillActive: string;
+  callcardSharingOff: string;
+  todayStoppedPrefix: string;
+  stoppedTag: string;
 };
 
 const EN_COPY: UiCopy = {
@@ -285,6 +333,10 @@ const EN_COPY: UiCopy = {
   reset: "Reset",
   liveHaikuLabel: "Live Haiku 5.5",
   callerVoiceLabel: "Caller voice",
+  controlsLabel: "Controls",
+  openMobileLabel: "Open /mobile",
+  languageLabel: "Language",
+  connectionLabel: "Connection",
   personaAriaLabel: "Phone persona",
   personaVictim: "Victim",
   personaGuardian: "Guardian",
@@ -294,7 +346,7 @@ const EN_COPY: UiCopy = {
   connectingLabel: "Connecting to Mirage…",
 
   panelBrand: "Mirage",
-  panelSubtitle: "real-time risk engine",
+  panelSubtitle: "private bank view",
   panelWaiting: "Waiting for a call",
   panelModeMirage: "MIRAGE ACTIVE",
   panelModeMonitoring: "MONITORING",
@@ -544,6 +596,50 @@ const EN_COPY: UiCopy = {
   guardianHold24hActive: "24h safe hold enabled ✓",
   guardianFalseAlarm: "Mark as trusted / false alarm",
   guardianFalseAlarmToast: "Biometric verification required after call ends",
+
+  statusStandby: "Standby",
+  statusMonitoring: "Monitoring",
+  statusMirageActive: "Mirage active",
+  chipCallActive: "Call active",
+  chipCallEnded: "Call ended",
+  chipCallCooldown: "Cooldown",
+  chipScreenSharing: "Screen sharing",
+  chipUnverified: "Unverified",
+  chipIbanPasted: "IBAN pasted",
+  chipTipCall: "Toggle active call state",
+  chipTipScreen: "Toggle screen sharing (+26% risk weight)",
+  chipTipUnverified: "Toggle unverified caller (+10% risk weight)",
+  chipTipIban: "Toggle pasted external IBAN (+12% risk weight)",
+  fraudRiskLabel: "Fraud risk",
+  algorithmShort: "Algorithm",
+  haikuShort: "Haiku 5.5",
+  analyzingInline: "Analyzing…",
+  thresholdShortLabel: "65% Mirage",
+  nextLineBtn: "Next line",
+  linesDoneBtn: "Done",
+  customLineBtn: "+ Custom",
+  nextPreviewPrefix: "Next:",
+  realBalancePrefix: "Real balance:",
+  phoneShowsInlinePrefix: "Phone shows",
+  capturedMulesPrefix: "Mules:",
+  honeytrapReadyInline: "Honeytrap armed · CB-412 bait ready",
+  familyGuardianLink: "Family Guardian →",
+  verdictLegitTitle: "Legitimate transfer allowed",
+  verdictEngineBoth: "Algorithm + AI",
+  verdictEngineHaiku: "Haiku 5.5",
+  verdictEngineAlgo: "Algorithm",
+  callbarSharingTitle: "You’re sharing your screen",
+  callbarStillSharingTitle: "You’re still sharing your screen",
+  callbarSharingSub: "The caller can see your banking app.",
+  callbarEndedSub: "The call has ended.",
+  callbarInProgressTitle: "Call in progress",
+  callbarCollapseAria: "Collapse banner",
+  callbarExpandAria: "Expand call banner",
+  callpillSharingStop: "Sharing · Stop",
+  callcardStillActive: "Call still active",
+  callcardSharingOff: "Screen sharing is off",
+  todayStoppedPrefix: "Today ·",
+  stoppedTag: "Stopped",
 };
 
 const RU_COPY: UiCopy = {
@@ -559,7 +655,11 @@ const RU_COPY: UiCopy = {
   shareScreen: "Показ экрана",
   reset: "Сброс",
   liveHaikuLabel: "Живой Haiku 5.5",
-  callerVoiceLabel: "Голос",
+  callerVoiceLabel: "Голос звонящего",
+  controlsLabel: "Настройки",
+  openMobileLabel: "Открыть /mobile",
+  languageLabel: "Язык",
+  connectionLabel: "Связь",
   personaAriaLabel: "Режим телефона",
   personaVictim: "Клиент",
   personaGuardian: "Близкий",
@@ -569,7 +669,7 @@ const RU_COPY: UiCopy = {
   connectingLabel: "Подключение к Mirage…",
 
   panelBrand: "Mirage",
-  panelSubtitle: "реалтайм-антифрод",
+  panelSubtitle: "панель антифрода",
   panelWaiting: "Ожидание входящего звонка",
   panelModeMirage: "МИРАЖ АКТИВЕН",
   panelModeMonitoring: "МОНИТОРИНГ",
@@ -819,6 +919,50 @@ const RU_COPY: UiCopy = {
   guardianHold24hActive: "Защита на 24ч включена ✓",
   guardianFalseAlarm: "Отметить как ложную тревогу",
   guardianFalseAlarmToast: "Нужна биометрия после завершения звонка",
+
+  statusStandby: "Ожидание",
+  statusMonitoring: "Мониторинг",
+  statusMirageActive: "Мираж активен",
+  chipCallActive: "Звонок",
+  chipCallEnded: "Завершён",
+  chipCallCooldown: "Cooldown",
+  chipScreenSharing: "Показ экрана",
+  chipUnverified: "Неизвестный",
+  chipIbanPasted: "IBAN вставлен",
+  chipTipCall: "Включить или завершить звонок",
+  chipTipScreen: "Переключить показ экрана (+26% к риску)",
+  chipTipUnverified: "Неподтверждённый номер (+10% к риску)",
+  chipTipIban: "Вставленный внешний IBAN (+12% к риску)",
+  fraudRiskLabel: "Риск фрода",
+  algorithmShort: "Алгоритм",
+  haikuShort: "Haiku 5.5",
+  analyzingInline: "Анализ…",
+  thresholdShortLabel: "65% Мираж",
+  nextLineBtn: "След. фраза",
+  linesDoneBtn: "Готово",
+  customLineBtn: "+ Своя",
+  nextPreviewPrefix: "Далее:",
+  realBalancePrefix: "Реальный счёт:",
+  phoneShowsInlinePrefix: "На телефоне",
+  capturedMulesPrefix: "Дропы:",
+  honeytrapReadyInline: "Ловушка взведена · приманка CB-412",
+  familyGuardianLink: "Близкий →",
+  verdictLegitTitle: "Обычный перевод выполнен",
+  verdictEngineBoth: "Алгоритм + AI",
+  verdictEngineHaiku: "Haiku 5.5",
+  verdictEngineAlgo: "Алгоритм",
+  callbarSharingTitle: "Идёт показ экрана",
+  callbarStillSharingTitle: "Показ экрана всё ещё включён",
+  callbarSharingSub: "Звонящий видит ваш банковский экран.",
+  callbarEndedSub: "Звонок уже завершён.",
+  callbarInProgressTitle: "Идёт звонок",
+  callbarCollapseAria: "Свернуть баннер",
+  callbarExpandAria: "Развернуть баннер",
+  callpillSharingStop: "Экран · Стоп",
+  callcardStillActive: "Звонок ещё идёт",
+  callcardSharingOff: "Показ экрана выключен",
+  todayStoppedPrefix: "Сегодня ·",
+  stoppedTag: "Остановлен",
 };
 
 export function getUiCopy(locale: Locale): UiCopy {
@@ -873,4 +1017,83 @@ export function getInitials(label: string): string {
     return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase();
   }
   return (cleaned.slice(0, 2) || "TR").toUpperCase();
+}
+
+const SIGNAL_REASON_LABELS: Record<string, { en: string; ru: string }> = {
+  "SYNTAX:FAKE_REVERSAL_PARADOX": {
+    en: "Fake reversal request",
+    ru: "Парадокс «перевод для отмены»",
+  },
+  "SYNTAX:SCREEN_ASSIST_PRETEXT": {
+    en: "Screen-assist pretext",
+    ru: "Помощь через экран",
+  },
+  "SYNTAX:TIME_CUTOFF_PRESSURE": {
+    en: "Countdown pressure",
+    ru: "Давление по времени",
+  },
+  "FLAG:SCREEN_CAPTURE_ACTIVE": {
+    en: "Screen sharing",
+    ru: "Показ экрана",
+  },
+  "FLAG:UNVERIFIED_INBOUND_CALL": {
+    en: "Unverified caller",
+    ru: "Неподтверждённый номер",
+  },
+  "FLAG:YOUNG_SIM_CALLER": {
+    en: "Fresh SIM",
+    ru: "Свежая SIM",
+  },
+  "FLAG:VAULT_WITHDRAWAL_ON_CALL": {
+    en: "Vault withdrawal",
+    ru: "Вывод из сейфа",
+  },
+  "FLAG:HIGH_VALUE_DRAIN_RATIO": {
+    en: "High-value drain",
+    ru: "Крупное списание",
+  },
+  "FLAG:TRANSFER_UNDER_SCREEN_SHARE": {
+    en: "Transfer under screen share",
+    ru: "Перевод при показе экрана",
+  },
+  "FLAG:EXTERNAL_RECIPIENT_INJECTED": {
+    en: "New pasted IBAN",
+    ru: "Вставленный IBAN",
+  },
+  "kw:suspicious_debit": {
+    en: "Suspicious debit claim",
+    ru: "Легенда о списании",
+  },
+  "kw:screen_share": {
+    en: "Screen-share prompt",
+    ru: "Просьба показать экран",
+  },
+  "kw:safe_or_transit_account": {
+    en: "Transit account mention",
+    ru: "Транзитный счёт",
+  },
+  "kw:authority_claim": {
+    en: "Bank security pretext",
+    ru: "Легенда службы безопасности",
+  },
+  "kw:call_isolation": {
+    en: "Do-not-hang-up pressure",
+    ru: "Запрет класть трубку",
+  },
+  "kw:iban_or_account_dictation": {
+    en: "IBAN dictation",
+    ru: "Диктовка IBAN",
+  },
+};
+
+export function formatSignalReason(tag: string, locale: Locale): string {
+  const mapped = SIGNAL_REASON_LABELS[tag];
+  if (mapped) {
+    return mapped[locale];
+  }
+  return tag
+    .replace(/^(?:SYNTAX|FLAG|kw):/i, "")
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/^\w/, (ch) => ch.toUpperCase());
 }

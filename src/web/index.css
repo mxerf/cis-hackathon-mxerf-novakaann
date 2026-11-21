@@ -159,6 +159,19 @@
   }
 }
 
+@keyframes mirage-morph {
+  from {
+    background-color: #12b76a;
+    padding-top: 26px;
+    padding-bottom: 30px;
+  }
+  to {
+    background-color: #2b2d33;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+}
+
 .animate-mirage-rise {
   animation: mirage-rise 0.35s ease;
 }
@@ -177,4 +190,8 @@
 
 .animate-mirage-blink {
   animation: mirage-blink 1.4s infinite;
+}
+
+.animate-mirage-morph {
+  animation: mirage-morph 0.22s ease-out;
 }

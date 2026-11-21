@@ -197,17 +197,17 @@ export function WalletSheets({
             )}
             <button
               type="button"
-              onClick={onSeeWhatHappened}
+              onClick={onViewAccountAfterReveal}
               className="h-[54px] w-full rounded-[var(--radius-md)] bg-[var(--primary)] text-[16.5px] font-bold text-[var(--primary-foreground)] transition hover:brightness-105"
             >
-              {copy.seeWhatHappened}
+              {copy.viewAccount}
             </button>
             <button
               type="button"
-              onClick={onViewAccountAfterReveal}
+              onClick={onSeeWhatHappened}
               className="mt-2 h-[42px] w-full rounded-[var(--radius-md)] bg-transparent text-[15px] font-semibold text-[var(--muted-foreground)] transition hover:text-[var(--foreground)]"
             >
-              {copy.viewAccount}
+              {copy.seeWhatHappened}
             </button>
           </div>
         )}

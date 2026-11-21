@@ -79,6 +79,7 @@ export type WalletReceiptProps = {
   shownBalance: number;
   currency: string;
   isStoppedRevealed: boolean;
+  compactForCallBar?: boolean;
   onSeeWhatHappened: () => void;
   onDone: () => void;
 };
@@ -90,62 +91,105 @@ export function WalletReceipt({
   shownBalance,
   currency,
   isStoppedRevealed,
+  compactForCallBar = false,
   onSeeWhatHappened,
   onDone,
 }: WalletReceiptProps) {
   const copy = getUiCopy(locale);
 
   return (
-    <div className="animate-mirage-fade flex min-h-0 flex-1 flex-col items-center pt-7 text-center">
+    <div
+      className={`animate-mirage-fade flex min-h-0 flex-1 flex-col items-center text-center ${
+        compactForCallBar ? "pt-1.5" : "pt-7"
+      }`}
+    >
       <div
-        className={`animate-mirage-pop flex h-16 w-16 items-center justify-center rounded-full shadow-[var(--shadow)] ${
+        className={`animate-mirage-pop flex flex-none items-center justify-center rounded-full shadow-[var(--shadow)] ${
+          compactForCallBar ? "h-12 w-12" : "h-16 w-16"
+        } ${
           isStoppedRevealed
             ? "bg-[var(--secondary)] text-[var(--primary)]"
             : "bg-[var(--primary)] text-[var(--primary-foreground)]"
         }`}
       >
         {isStoppedRevealed ? (
-          <ShieldCheck className="h-8 w-8" />
+          <ShieldCheck className={compactForCallBar ? "h-6 w-6" : "h-8 w-8"} />
         ) : (
-          <Check className="h-8 w-8 stroke-[3]" />
+          <Check className={compactForCallBar ? "h-6 w-6 stroke-[3]" : "h-8 w-8 stroke-[3]"} />
         )}
       </div>
 
-      <h2 className="mt-4 text-[24px] font-extrabold tracking-[-0.02em] text-[var(--foreground)]">
+      <h2
+        className={`font-extrabold tracking-[-0.02em] text-[var(--foreground)] ${
+          compactForCallBar ? "mt-2 text-[21px]" : "mt-4 text-[24px]"
+        }`}
+      >
         {isStoppedRevealed ? copy.transferBlocked : copy.transferComplete}
       </h2>
 
-      <div className="mono mt-6 text-[46px] leading-none font-bold tracking-[-0.04em] text-[var(--foreground)]">
+      <div
+        className={`mono leading-none font-bold tracking-[-0.04em] text-[var(--foreground)] ${
+          compactForCallBar ? "mt-3 text-[40px]" : "mt-6 text-[46px]"
+        }`}
+      >
         {isStoppedRevealed
           ? formatAed(0, currency, 0)
           : formatAed(receipt.amount, receipt.currency, 0)}
       </div>
-      <div className="mt-3 text-[14.5px] text-[var(--muted-foreground)]">
+      <div
+        className={`text-[14.5px] text-[var(--muted-foreground)] ${
+          compactForCallBar ? "mt-1.5" : "mt-3"
+        }`}
+      >
         {isStoppedRevealed
           ? `${copy.ofPrefix} ${formatAed(receipt.amount, receipt.currency, 0)} ${copy.toPrefix} ${recipientDisplay}`
           : `${copy.toPrefix} ${recipientDisplay}`}
       </div>
 
-      <div className="mt-5 self-stretch rounded-[28px] bg-[var(--card)] px-5 py-2 text-left">
-        <div className="flex items-baseline justify-between border-b border-[var(--border)] py-2.5 text-[14px]">
+      <div
+        className={`self-stretch rounded-[28px] bg-[var(--card)] px-5 py-1.5 text-left ${
+          compactForCallBar ? "mt-3" : "mt-5"
+        }`}
+      >
+        <div
+          className={`flex items-baseline justify-between border-b border-[var(--border)] text-[14px] ${
+            compactForCallBar ? "py-2" : "py-2.5"
+          }`}
+        >
           <span className="text-[var(--muted-foreground)]">{copy.detailStatus}</span>
           <b className={isStoppedRevealed ? "font-bold text-[var(--primary)]" : "font-semibold"}>
             {isStoppedRevealed ? copy.statusBlocked : copy.statusSent}
           </b>
         </div>
-        <div className="flex items-baseline justify-between border-b border-[var(--border)] py-2.5 text-[14px]">
+        <div
+          className={`flex items-baseline justify-between border-b border-[var(--border)] text-[14px] ${
+            compactForCallBar ? "py-2" : "py-2.5"
+          }`}
+        >
           <span className="text-[var(--muted-foreground)]">{copy.detailType}</span>
           <b className="font-semibold text-[var(--foreground)]">{copy.detailTypeValue}</b>
         </div>
-        <div className="flex items-baseline justify-between border-b border-[var(--border)] py-2.5 text-[14px]">
+        <div
+          className={`flex items-baseline justify-between border-b border-[var(--border)] text-[14px] ${
+            compactForCallBar ? "py-2" : "py-2.5"
+          }`}
+        >
           <span className="text-[var(--muted-foreground)]">{copy.detailDate}</span>
           <b className="font-semibold text-[var(--foreground)]">21 Nov 2026, 9:41</b>
         </div>
-        <div className="flex items-baseline justify-between border-b border-[var(--border)] py-2.5 text-[14px]">
+        <div
+          className={`flex items-baseline justify-between border-b border-[var(--border)] text-[14px] ${
+            compactForCallBar ? "py-2" : "py-2.5"
+          }`}
+        >
           <span className="text-[var(--muted-foreground)]">{copy.detailReference}</span>
           <b className="mono text-[13px] font-medium text-[var(--foreground)]">{receipt.refCode}</b>
         </div>
-        <div className="flex items-baseline justify-between py-2.5 text-[14px]">
+        <div
+          className={`flex items-baseline justify-between text-[14px] ${
+            compactForCallBar ? "py-2" : "py-2.5"
+          }`}
+        >
           <span className="text-[var(--muted-foreground)]">
             {isStoppedRevealed ? copy.detailBalance : copy.detailNewBalance}
           </span>
@@ -155,7 +199,7 @@ export function WalletReceipt({
         </div>
       </div>
 
-      <div className="mt-auto w-full pt-4">
+      <div className="mt-auto w-full pt-3">
         {isStoppedRevealed && (
           <button
             type="button"
@@ -168,7 +212,7 @@ export function WalletReceipt({
         <button
           type="button"
           onClick={onDone}
-          className="h-[54px] w-full rounded-[var(--radius-md)] bg-[var(--primary)] text-[17px] font-bold text-[var(--primary-foreground)] shadow-[var(--shadow-xs)] transition hover:brightness-105"
+          className="h-[52px] w-full rounded-[var(--radius-md)] bg-[var(--primary)] text-[17px] font-bold text-[var(--primary-foreground)] shadow-[var(--shadow-xs)] transition hover:brightness-105"
         >
           {copy.done}
         </button>

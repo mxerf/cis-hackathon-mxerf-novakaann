@@ -21,6 +21,7 @@ export type WalletSendProps = {
   suggestedMules: SuggestedMule[];
   highlightBackupMule: boolean;
   isScreenSharing: boolean;
+  compactForCallBar?: boolean;
   onBack: () => void;
   onCycleFromAccount: () => void;
   onOpenRecipientPicker: () => void;
@@ -41,6 +42,7 @@ export function WalletSend({
   suggestedMules,
   highlightBackupMule,
   isScreenSharing,
+  compactForCallBar = false,
   onBack,
   onCycleFromAccount,
   onOpenRecipientPicker,
@@ -105,15 +107,27 @@ export function WalletSend({
         <span className="w-8" />
       </div>
 
-      <div className="mono my-1.5 text-center text-[42px] leading-[1.1] font-bold tracking-[-0.04em] text-[var(--foreground)]">
+      <div
+        className={`mono text-center leading-[1.1] font-bold tracking-[-0.04em] text-[var(--foreground)] ${
+          compactForCallBar ? "my-1 text-[34px]" : "my-1.5 text-[42px]"
+        }`}
+      >
         {formattedAmount}
-        <small className="ml-2 text-[22px] font-semibold tracking-normal text-[var(--muted-foreground)]">
+        <small
+          className={`ml-2 font-semibold tracking-normal text-[var(--muted-foreground)] ${
+            compactForCallBar ? "text-[18px]" : "text-[22px]"
+          }`}
+        >
           {currency}
         </small>
       </div>
 
       {suggestedMules.length > 0 && (
-        <div className="mb-2.5 flex flex-wrap justify-center gap-2">
+        <div
+          className={`flex flex-wrap justify-center gap-1.5 ${
+            compactForCallBar ? "mb-1.5" : "mb-2.5"
+          }`}
+        >
           {suggestedMules.slice(0, 2).map((mule, idx) => {
             const isBackupHighlighted = highlightBackupMule && idx === 1;
             const isSelected =
@@ -124,7 +138,9 @@ export function WalletSend({
                 key={mule.value}
                 type="button"
                 onClick={() => onSelectSuggestedMule(mule)}
-                className={`rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition ${
+                className={`rounded-full px-3 text-[11.5px] font-semibold transition ${
+                  compactForCallBar ? "py-1" : "py-1.5"
+                } ${
                   isBackupHighlighted
                     ? "border border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_22%,var(--card))] text-[var(--foreground)] shadow-[var(--shadow-xs)]"
                     : isSelected
@@ -142,22 +158,28 @@ export function WalletSend({
         </div>
       )}
 
-      <div className="mb-2.5 rounded-[24px] bg-[var(--card)] px-4 py-1">
+      <div
+        className={`rounded-[24px] bg-[var(--card)] px-4 py-0.5 ${
+          compactForCallBar ? "mb-2" : "mb-2.5"
+        }`}
+      >
         {fromAccount && (
           <button
             type="button"
             onClick={onCycleFromAccount}
-            className="flex w-full items-center gap-3 py-2.5 text-left transition hover:opacity-90"
+            className={`flex w-full items-center gap-3 text-left transition hover:opacity-90 ${
+              compactForCallBar ? "py-2" : "py-2.5"
+            }`}
           >
-            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[var(--primary)] text-[12px] font-bold text-[var(--primary-foreground)]">
+            <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-[var(--primary)] text-[11.5px] font-bold text-[var(--primary-foreground)]">
               {fromAccount.currency}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="mono truncate text-[12px] text-[var(--muted-foreground)]">
+              <div className="mono truncate text-[11.5px] text-[var(--muted-foreground)]">
                 {formatAed(fromAccount.balance, fromAccount.currency, 2)} ·{" "}
                 {maskIfSharing(fromMeta.accountNumber, isScreenSharing)}
               </div>
-              <div className="truncate text-[14.5px] font-semibold text-[var(--foreground)]">
+              <div className="truncate text-[14px] font-semibold text-[var(--foreground)]">
                 {copy.fromPrefix} {fromAccount.name}
               </div>
             </div>
@@ -168,33 +190,35 @@ export function WalletSend({
         <button
           type="button"
           onClick={onOpenRecipientPicker}
-          className="flex w-full items-center gap-3 border-t border-[var(--border)] py-2.5 text-left transition hover:opacity-90"
+          className={`flex w-full items-center gap-3 border-t border-[var(--border)] text-left transition hover:opacity-90 ${
+            compactForCallBar ? "py-2" : "py-2.5"
+          }`}
         >
           {recipientValue.trim() ? (
             <>
-              <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[var(--primary)] text-[12px] font-bold text-[var(--primary-foreground)]">
+              <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-[var(--primary)] text-[11.5px] font-bold text-[var(--primary-foreground)]">
                 {getInitials(recipientLabel || recipientValue)}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[12px] text-[var(--muted-foreground)]">
+                <div className="truncate text-[11.5px] text-[var(--muted-foreground)]">
                   {copy.newRecipientTag} ·{" "}
                   <span className="mono">{maskIfSharing(recipientValue, isScreenSharing)}</span>
                 </div>
-                <div className="truncate text-[14.5px] font-semibold text-[var(--foreground)]">
+                <div className="truncate text-[14px] font-semibold text-[var(--foreground)]">
                   {copy.toPrefix} {recipientLabel || shortIban(recipientValue)}
                 </div>
               </div>
             </>
           ) : (
             <>
-              <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[var(--secondary)] text-[18px] font-semibold text-[var(--muted-foreground)]">
+              <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-[var(--secondary)] text-[17px] font-semibold text-[var(--muted-foreground)]">
                 +
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-[12px] text-[var(--muted-foreground)]">
+                <div className="text-[11.5px] text-[var(--muted-foreground)]">
                   {copy.newRecipientTag}
                 </div>
-                <div className="text-[14.5px] font-semibold text-[var(--foreground)]">
+                <div className="text-[14px] font-semibold text-[var(--foreground)]">
                   {copy.chooseRecipient}
                 </div>
               </div>
@@ -208,12 +232,18 @@ export function WalletSend({
         type="button"
         disabled={!canReview}
         onClick={onOpenReview}
-        className="h-[52px] w-full flex-none rounded-[var(--radius-md)] bg-[var(--primary)] text-[16.5px] font-bold text-[var(--primary-foreground)] shadow-[var(--shadow-xs)] transition hover:brightness-105 active:scale-[0.99] disabled:bg-[var(--secondary)] disabled:text-[var(--muted-foreground)] disabled:shadow-none"
+        className={`w-full flex-none rounded-[var(--radius-md)] bg-[var(--primary)] text-[16px] font-bold text-[var(--primary-foreground)] shadow-[var(--shadow-xs)] transition hover:brightness-105 active:scale-[0.99] disabled:bg-[var(--secondary)] disabled:text-[var(--muted-foreground)] disabled:shadow-none ${
+          compactForCallBar ? "h-[46px]" : "h-[52px]"
+        }`}
       >
         {copy.reviewTransfer}
       </button>
 
-      <div className="my-1.5 text-center text-[12.5px] text-[var(--muted-foreground)]">
+      <div
+        className={`text-center text-[12px] text-[var(--muted-foreground)] ${
+          compactForCallBar ? "my-1" : "my-1.5"
+        }`}
+      >
         {copy.noFee}
       </div>
 
@@ -225,9 +255,9 @@ export function WalletSend({
               key={key}
               type="button"
               onClick={() => onKeypadInput(key)}
-              className={`h-[40px] rounded-[10px] text-[20px] font-medium text-[var(--foreground)] transition active:bg-[var(--accent)] ${
-                isMutedKey ? "bg-transparent" : "bg-[var(--secondary)]"
-              }`}
+              className={`rounded-[10px] font-medium text-[var(--foreground)] transition active:bg-[var(--accent)] ${
+                compactForCallBar ? "h-[31px] text-[18px]" : "h-[40px] text-[20px]"
+              } ${isMutedKey ? "bg-transparent" : "bg-[var(--secondary)]"}`}
             >
               {key === "del" ? "⌫" : key}
             </button>
@@ -246,6 +276,7 @@ export type WalletReviewProps = {
   amount: number;
   isScreenSharing: boolean;
   isSubmitting: boolean;
+  compactForCallBar?: boolean;
   onBack: () => void;
   onConfirm: () => void;
 };
@@ -258,11 +289,13 @@ export function WalletReview({
   amount,
   isScreenSharing,
   isSubmitting,
+  compactForCallBar = false,
   onBack,
   onConfirm,
 }: WalletReviewProps) {
   const copy = getUiCopy(locale);
   const fromMeta = ACCOUNT_DETAILS_MAP[fromAccount.kind];
+  const displayRecipient = recipientLabel || shortIban(recipientValue);
 
   return (
     <div className="animate-mirage-fade flex min-h-0 flex-1 flex-col">
@@ -281,47 +314,75 @@ export function WalletReview({
         </h1>
       </div>
 
-      <div className="my-4 text-center">
+      <div className={`text-center ${compactForCallBar ? "my-2" : "my-4"}`}>
         <span className="inline-block rounded-full bg-[var(--secondary)] px-3 py-1 text-[12px] font-semibold text-[var(--secondary-foreground)]">
           {copy.localTransferPill}
         </span>
-        <div className="mt-2.5 text-[13px] text-[var(--muted-foreground)]">
+        <div
+          className={`text-[13px] text-[var(--muted-foreground)] ${
+            compactForCallBar ? "mt-1.5" : "mt-2.5"
+          }`}
+        >
           {copy.youAreSending}
         </div>
-        <div className="mono mt-0.5 text-[42px] leading-tight font-bold tracking-[-0.04em] text-[var(--foreground)]">
+        <div
+          className={`mono mt-0.5 leading-tight font-bold tracking-[-0.04em] text-[var(--foreground)] ${
+            compactForCallBar ? "text-[38px]" : "text-[44px]"
+          }`}
+        >
           {formatAed(amount, fromAccount.currency, amount % 1 === 0 ? 0 : 2)}
+        </div>
+        <div
+          className={`truncate tracking-[-0.01em] text-[var(--foreground)] ${
+            compactForCallBar
+              ? "mt-1 text-[19px] font-extrabold"
+              : "mt-1.5 text-[22px] font-extrabold"
+          }`}
+        >
+          <span className="font-medium text-[var(--muted-foreground)]">{copy.toPrefix} </span>
+          {displayRecipient}
         </div>
       </div>
 
-      <div className="rounded-[28px] bg-[var(--card)] px-5 py-2">
-        <div className="flex items-baseline justify-between gap-3 border-b border-[var(--border)] py-3 text-[14.5px]">
-          <span className="text-[var(--muted-foreground)]">{copy.detailTo}</span>
-          <b className="truncate text-right font-semibold text-[var(--foreground)]">
-            {recipientLabel || shortIban(recipientValue)}
-          </b>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 border-b border-[var(--border)] py-3 text-[14.5px]">
+      <div className="rounded-[28px] bg-[var(--card)] px-5 py-1.5">
+        <div
+          className={`flex items-baseline justify-between gap-3 border-b border-[var(--border)] text-[14.5px] ${
+            compactForCallBar ? "py-2.5" : "py-3"
+          }`}
+        >
           <span className="text-[var(--muted-foreground)]">{copy.detailIban}</span>
           <b className="mono text-right text-[12.5px] font-medium text-[var(--foreground)]">
             {maskIfSharing(recipientValue, isScreenSharing)}
           </b>
         </div>
-        <div className="flex items-baseline justify-between gap-3 border-b border-[var(--border)] py-3 text-[14.5px]">
+        <div
+          className={`flex items-baseline justify-between gap-3 border-b border-[var(--border)] text-[14.5px] ${
+            compactForCallBar ? "py-2.5" : "py-3"
+          }`}
+        >
           <span className="text-[var(--muted-foreground)]">{copy.detailFrom}</span>
           <b className="text-right text-[13.5px] font-semibold text-[var(--foreground)]">
-            {fromAccount.name}{" "}
+            {fromAccount.kind === "vault" ? copy.savingsVaultTitle : copy.currentAccountTitle}{" "}
             <span className="mono block text-[12px] font-medium text-[var(--muted-foreground)]">
               {maskIfSharing(fromMeta.accountNumber, isScreenSharing)}
             </span>
           </b>
         </div>
-        <div className="flex items-baseline justify-between gap-3 border-b border-[var(--border)] py-3 text-[14.5px]">
+        <div
+          className={`flex items-baseline justify-between gap-3 border-b border-[var(--border)] text-[14.5px] ${
+            compactForCallBar ? "py-2.5" : "py-3"
+          }`}
+        >
           <span className="text-[var(--muted-foreground)]">{copy.detailType}</span>
           <b className="text-right font-semibold text-[var(--foreground)]">
             {copy.detailTypeValue}
           </b>
         </div>
-        <div className="flex items-baseline justify-between gap-3 py-3 text-[14.5px]">
+        <div
+          className={`flex items-baseline justify-between gap-3 text-[14.5px] ${
+            compactForCallBar ? "py-2.5" : "py-3"
+          }`}
+        >
           <span className="text-[var(--muted-foreground)]">{copy.detailFee}</span>
           <b className="mono text-right font-semibold text-[var(--foreground)]">
             {fromAccount.currency} {formatNumber(0, 0)}
