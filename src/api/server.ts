@@ -1,6 +1,6 @@
 import type { Server, ServerWebSocket } from "bun";
 import { createApiApp } from "./app.ts";
-import type { MirageStore } from "./context.ts";
+import type { MirageStore, PendingAiWaitResult } from "./context.ts";
 import { createInitialState } from "./modules/mirage/mirage.core.ts";
 import { DEFAULT_PRESET, getPresetById } from "./modules/mirage/mirage.presets.ts";
 import type { MirageSnapshot, MirageState } from "./modules/mirage/mirage.types.ts";
@@ -24,6 +24,7 @@ export function startServer(
   let currentState: MirageState = createInitialState(DEFAULT_PRESET, "en");
   let connectedClients = 0;
   let bunServer: Server<WsClientData> | null = null;
+  const pendingAiBySession = new Map<string, Set<Promise<void>>>();
 
   function buildSnapshot(): MirageSnapshot {
     return {
@@ -49,6 +50,47 @@ export function startServer(
       const snapshot = buildSnapshot();
       bunServer?.publish(WS_TOPIC, serializeStateMessage(snapshot));
       return snapshot;
+    },
+    trackAiTask(sessionId: string, task: Promise<void>): void {
+      let bucket = pendingAiBySession.get(sessionId);
+      if (!bucket) {
+        bucket = new Set();
+        pendingAiBySession.set(sessionId, bucket);
+      }
+      bucket.add(task);
+      void task.finally(() => {
+        const active = pendingAiBySession.get(sessionId);
+        if (!active) {
+          return;
+        }
+        active.delete(task);
+        if (active.size === 0) {
+          pendingAiBySession.delete(sessionId);
+        }
+      });
+    },
+    async waitForPendingAi(sessionId: string, timeoutMs: number): Promise<PendingAiWaitResult> {
+      const bucket = pendingAiBySession.get(sessionId);
+      if (!bucket || bucket.size === 0) {
+        return { waitedMs: 0, timedOut: false, hadPending: false };
+      }
+      const startedAt = performance.now();
+      const tasks = [...bucket];
+      let timerId: ReturnType<typeof setTimeout> | null = null;
+      const timedOut = await Promise.race([
+        Promise.allSettled(tasks).then(() => false),
+        new Promise<boolean>((resolve) => {
+          timerId = setTimeout(() => resolve(true), timeoutMs);
+        }),
+      ]);
+      if (timerId !== null) {
+        clearTimeout(timerId);
+      }
+      return {
+        waitedMs: Math.round(performance.now() - startedAt),
+        timedOut,
+        hadPending: true,
+      };
     },
   };
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   COERCION_ACTIVATION_THRESHOLD,
   advanceScriptedChunk,
+  applyAiDetection,
   createInitialState,
   detectMuleKind,
   getVisibleAccounts,
@@ -10,6 +11,7 @@ import {
   setLocale,
   startCall,
   submitTransfer,
+  updateDetectionSignals,
 } from "./mirage.core.ts";
 import { BANK_REFUND_TRAP_PRESET, UAE_DU_KYC_PRESET } from "./mirage.presets.ts";
 
@@ -213,5 +215,44 @@ describe("Mirage coercion shield core", () => {
 
     const fresh = resetState(BANK_REFUND_TRAP_PRESET, "ru");
     expect(fresh.sessionId).not.toBe(initial.sessionId);
+  });
+
+  test("high-value transfer during active call with screen sharing engages Mirage even with zero transcript keywords", () => {
+    let state = startCall(createInitialState(BANK_REFUND_TRAP_PRESET, "en"));
+    state = updateDetectionSignals(state, { screenSharing: true });
+    expect(state.mode).toBe("normal");
+
+    const res = submitTransfer(state, {
+      fromAccountId: "acc-checking",
+      recipientValue: "AE070331234567890123456",
+      amount: 14500,
+    });
+
+    expect(res.outcome).toBe("rejected_honeytrap");
+    expect(res.state.mode).toBe("mirage");
+    expect(res.state.call.detection.algorithm.activeFlags).toContain("FLAG:HIGH_VALUE_DRAIN_RATIO");
+    expect(res.state.realAccounts[0]?.balance).toBe(24500);
+  });
+
+  test("applyAiDetection merges background AI verdict into active call and engages Mirage", () => {
+    let state = startCall(createInitialState(BANK_REFUND_TRAP_PRESET, "en"));
+    state = ingestTranscriptChunk(state, {
+      speaker: "caller",
+      text: "Just put the numbers I sent you into the form and tap green.",
+      coercionScoreDelta: 0,
+      flaggedTactics: [],
+    });
+    expect(state.mode).toBe("normal");
+
+    const enriched = applyAiDetection(state, {
+      aiScore: 86,
+      tactics: ["safe_account_lure", "isolation"],
+      reasoning: "Implicit coercion via euphemisms.",
+      source: "ai",
+    });
+
+    expect(enriched.mode).toBe("mirage");
+    expect(enriched.call.detection.ai.score).toBe(86);
+    expect(enriched.call.transcript).toHaveLength(1);
   });
 });

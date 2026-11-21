@@ -121,4 +121,67 @@ describe("2-Tier Antifraud Detector — Algorithm Level & Ensemble", () => {
     expect(result.matchedConstructions).toHaveLength(0);
     expect(result.score).toBe(0);
   });
+
+  test("matches syntactic constructions across separate streaming ASR chunks", () => {
+    const result = evaluateAlgorithmLevel({
+      callActive: true,
+      signals: {
+        unverifiedCaller: true,
+        screenSharing: false,
+        clipboardPasteDetected: false,
+      },
+      transcript: [
+        {
+          id: "asr-1",
+          speaker: "caller",
+          text: "Чтобы отменить списание",
+          timestamp: "2026-11-21T10:00:00.000Z",
+          flaggedTactics: [],
+        },
+        {
+          id: "asr-2",
+          speaker: "caller",
+          text: "переведите сумму на резервный счёт прямо сейчас",
+          timestamp: "2026-11-21T10:00:02.000Z",
+          flaggedTactics: [],
+        },
+      ],
+    });
+
+    expect(result.matchedConstructions).toContain("SYNTAX:FAKE_REVERSAL_PARADOX");
+    expect(result.matchedConstructions).toContain("SYNTAX:TIME_CUTOFF_PRESSURE");
+  });
+
+  test("scores YOUNG_SIM_CALLER and HIGH_VALUE_DRAIN_RATIO behavioral flags", () => {
+    const highDrain = evaluateAlgorithmLevel({
+      callActive: true,
+      simAgeDays: 4,
+      pendingTransferDrainRatio: 0.6,
+      signals: {
+        unverifiedCaller: true,
+        screenSharing: true,
+        clipboardPasteDetected: false,
+      },
+      transcript: [],
+    });
+
+    expect(highDrain.activeFlags).toContain("FLAG:YOUNG_SIM_CALLER");
+    expect(highDrain.activeFlags).toContain("FLAG:HIGH_VALUE_DRAIN_RATIO");
+    expect(highDrain.score).toBe(68);
+
+    const smallTransfer = evaluateAlgorithmLevel({
+      callActive: true,
+      simAgeDays: 365,
+      pendingTransferDrainRatio: 0.05,
+      signals: {
+        unverifiedCaller: true,
+        screenSharing: false,
+        clipboardPasteDetected: false,
+      },
+      transcript: [],
+    });
+
+    expect(smallTransfer.activeFlags).not.toContain("FLAG:YOUNG_SIM_CALLER");
+    expect(smallTransfer.activeFlags).not.toContain("FLAG:HIGH_VALUE_DRAIN_RATIO");
+  });
 });

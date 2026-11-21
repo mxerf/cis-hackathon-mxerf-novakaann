@@ -7,6 +7,8 @@ type RuleEntry = {
 };
 
 const CORROBORATION_FACTOR = 0.62;
+export const YOUNG_SIM_DAYS_THRESHOLD = 14;
+export const HIGH_VALUE_DRAIN_THRESHOLD = 0.45;
 
 const KEYWORD_RULES: readonly RuleEntry[] = [
   {
@@ -79,8 +81,10 @@ export function evaluateAlgorithmLevel(params: {
   callActive: boolean;
   signals: DetectionSignals;
   transcript: readonly TranscriptEntry[];
+  simAgeDays?: number;
+  pendingTransferDrainRatio?: number;
 }): AlgorithmDetection {
-  const { callActive, signals, transcript } = params;
+  const { callActive, signals, transcript, simAgeDays, pendingTransferDrainRatio } = params;
 
   const activeFlags: string[] = [];
   let score = 0;
@@ -88,6 +92,16 @@ export function evaluateAlgorithmLevel(params: {
   if (callActive && signals.unverifiedCaller) {
     activeFlags.push("FLAG:UNVERIFIED_INBOUND_CALL");
     score += 10;
+  }
+
+  if (
+    callActive &&
+    signals.unverifiedCaller &&
+    simAgeDays !== undefined &&
+    simAgeDays <= YOUNG_SIM_DAYS_THRESHOLD
+  ) {
+    activeFlags.push("FLAG:YOUNG_SIM_CALLER");
+    score += 8;
   }
 
   if (callActive && signals.screenSharing) {
@@ -100,10 +114,20 @@ export function evaluateAlgorithmLevel(params: {
     score += 12;
   }
 
+  if (
+    callActive &&
+    signals.unverifiedCaller &&
+    pendingTransferDrainRatio !== undefined &&
+    pendingTransferDrainRatio >= HIGH_VALUE_DRAIN_THRESHOLD
+  ) {
+    activeFlags.push("FLAG:HIGH_VALUE_DRAIN_RATIO");
+    score += 24;
+  }
+
   const callerCorpus = transcript
     .filter((entry) => entry.speaker === "caller")
     .map((entry) => entry.text)
-    .join(" \n ");
+    .join(" ");
 
   const matchedKeywords: string[] = [];
   const matchedConstructions: string[] = [];

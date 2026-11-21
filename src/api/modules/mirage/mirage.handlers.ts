@@ -4,6 +4,7 @@ import type { PublicResolverOptions } from "../../trpc.ts";
 import {
   advanceScriptedChunk,
   appendSupportMessage,
+  applyAiDetection,
   endCall,
   ingestTranscriptChunk,
   resetState,
@@ -22,6 +23,8 @@ import type {
   SubmitTransferSchemaInput,
   UpdateSignalsSchemaInput,
 } from "./mirage.schemas.ts";
+
+export const PRE_TRANSFER_AI_WAIT_MS = 3500;
 
 export function snapshot({ ctx }: PublicResolverOptions) {
   return ctx.store.getSnapshot();
@@ -52,72 +55,71 @@ export async function ingestCallTranscript({
   ctx,
   input,
 }: PublicResolverOptions & { input: IngestTranscriptSchemaInput }) {
-  const initial = ctx.store.getState();
-  const startSessionId = initial.sessionId;
-  const { speaker, text, analyzeWithAi } = input;
-  let delta = input.coercionScoreDelta;
-  let tactics = input.flaggedTactics;
-  let aiScore: number | undefined;
-  let analysisSummary: string | undefined;
-  let analysisSource: "ai" | "fallback" | "manual" = "manual";
+  const { speaker, text, analyzeWithAi, waitForAi } = input;
+  let current = ctx.store.getState();
+  const historyBeforeChunk = current.call.transcript.map(
+    (entry) => `${entry.speaker}: ${entry.text}`,
+  );
 
-  if (delta === undefined || tactics === undefined) {
-    if (speaker === "caller" && analyzeWithAi) {
-      const analysis = await analyzeCallChunk(text, {
-        previousTranscript: initial.call.transcript.map(
-          (entry) => `${entry.speaker}: ${entry.text}`,
-        ),
-        screenSharing: initial.call.detection.signals.screenSharing,
-      });
-      delta = delta ?? analysis.coercionScoreDelta;
-      tactics = tactics ?? analysis.tactics;
-      aiScore = analysis.aiProbability;
-      analysisSummary = analysis.summary;
-      analysisSource = analysis.source;
-    } else {
-      delta = delta ?? 0;
-      tactics = tactics ?? [];
-    }
+  if (!current.call.active) {
+    current = startCall(current);
   }
 
-  let latest = ctx.store.getState();
-  if (latest.sessionId !== startSessionId) {
+  const shouldRunAi =
+    speaker === "caller" &&
+    analyzeWithAi &&
+    input.coercionScoreDelta === undefined &&
+    input.flaggedTactics === undefined;
+
+  // Phase 1 (<1 ms): immediately commit transcript and run deterministic Algorithm Level
+  const phase1 = ingestTranscriptChunk(current, {
+    speaker,
+    text,
+    coercionScoreDelta: input.coercionScoreDelta ?? 0,
+    flaggedTactics: input.flaggedTactics ?? [],
+  });
+
+  const savedPhase1 = ctx.store.setState(phase1);
+  const startSessionId = savedPhase1.state.sessionId;
+
+  if (!shouldRunAi) {
     return {
-      ...ctx.store.getSnapshot(),
-      analysis: {
-        aiProbability: aiScore,
-        coercionScoreDelta: delta,
-        tactics,
-        summary: analysisSummary,
-        source: analysisSource,
-      },
+      ...savedPhase1,
+      aiPending: false,
     };
   }
 
-  if (!latest.call.active) {
-    latest = startCall(latest);
-  }
-
-  const next = ingestTranscriptChunk(latest, {
-    speaker,
-    text,
-    coercionScoreDelta: delta,
-    flaggedTactics: tactics,
-    aiScore,
-    aiReasoning: analysisSummary,
-    aiSource: analysisSource === "ai" || analysisSource === "fallback" ? analysisSource : undefined,
+  // Phase 2 (background): run AI Semantic Level without blocking Algorithm Level / Mirage engagement
+  const aiTask = analyzeCallChunk(text, {
+    previousTranscript: historyBeforeChunk,
+    screenSharing: savedPhase1.state.call.detection.signals.screenSharing,
+  }).then((analysis) => {
+    const latest = ctx.store.getState();
+    if (latest.sessionId !== startSessionId) {
+      return;
+    }
+    const merged = applyAiDetection(latest, {
+      aiScore: analysis.aiProbability,
+      tactics: analysis.tactics,
+      reasoning: analysis.summary,
+      source: analysis.source,
+    });
+    ctx.store.setState(merged);
   });
 
-  const saved = ctx.store.setState(next);
+  ctx.store.trackAiTask(startSessionId, aiTask);
+
+  if (waitForAi) {
+    await aiTask;
+    return {
+      ...ctx.store.getSnapshot(),
+      aiPending: false,
+    };
+  }
+
   return {
-    ...saved,
-    analysis: {
-      aiProbability: aiScore,
-      coercionScoreDelta: delta,
-      tactics,
-      summary: analysisSummary,
-      source: analysisSource,
-    },
+    ...savedPhase1,
+    aiPending: true,
   };
 }
 
@@ -126,55 +128,75 @@ export async function advanceCallScript({
   input,
 }: PublicResolverOptions & { input: NextChunkSchemaInput }) {
   const initial = ctx.store.getState();
-  const startSessionId = initial.sessionId;
-  const startChunkIndex = initial.scriptedChunkIndex;
   const analyzeWithAi = input?.analyzeWithAi ?? false;
+  const waitForAi = input?.waitForAi ?? false;
   const preset = getPresetById(initial.presetId);
-  const upcomingChunk = preset.scriptedChunks[startChunkIndex];
+  const upcomingChunk = preset.scriptedChunks[initial.scriptedChunkIndex];
 
   if (!upcomingChunk) {
-    return { ...ctx.store.getSnapshot(), exhausted: true };
+    return { ...ctx.store.getSnapshot(), exhausted: true, aiPending: false };
   }
 
-  let analysisOverride:
-    | {
-        coercionScoreDelta: number;
-        flaggedTactics: string[];
-        aiScore?: number;
-        aiReasoning?: string;
-        aiSource?: "ai" | "fallback";
-      }
-    | undefined;
+  const historyBeforeChunk = initial.call.transcript.map(
+    (entry) => `${entry.speaker}: ${entry.text}`,
+  );
+  const shouldRunAi = analyzeWithAi && upcomingChunk.speaker === "caller";
 
-  if (analyzeWithAi && upcomingChunk.speaker === "caller") {
-    const analysis = await analyzeCallChunk(upcomingChunk.text, {
-      previousTranscript: initial.call.transcript.map((entry) => `${entry.speaker}: ${entry.text}`),
-      screenSharing:
-        upcomingChunk.autoEnableScreenShare || initial.call.detection.signals.screenSharing,
-    });
-    analysisOverride = {
-      coercionScoreDelta: Math.max(upcomingChunk.coercionScoreDelta, analysis.coercionScoreDelta),
-      flaggedTactics: analysis.tactics.length > 0 ? analysis.tactics : upcomingChunk.flaggedTactics,
-      aiScore: Math.max(upcomingChunk.aiScore ?? 0, analysis.aiProbability),
-      aiReasoning: analysis.summary,
-      aiSource: analysis.source,
-    };
-  }
+  // Phase 1 (<1 ms): immediately advance script and evaluate Algorithm Level
+  const phase1 = shouldRunAi
+    ? advanceScriptedChunk(initial, preset, new Date().toISOString(), {
+        coercionScoreDelta: 0,
+        flaggedTactics: [],
+        aiScore: initial.call.detection.ai.score,
+        aiReasoning: initial.call.detection.ai.reasoning,
+      })
+    : advanceScriptedChunk(initial, preset, new Date().toISOString());
 
-  const latest = ctx.store.getState();
-  if (latest.sessionId !== startSessionId || latest.scriptedChunkIndex !== startChunkIndex) {
+  const savedPhase1 = ctx.store.setState(phase1);
+  const startSessionId = savedPhase1.state.sessionId;
+  const isExhausted = savedPhase1.state.scriptedChunkIndex >= preset.scriptedChunks.length;
+
+  if (!shouldRunAi) {
     return {
-      ...ctx.store.getSnapshot(),
-      exhausted: latest.scriptedChunkIndex >= preset.scriptedChunks.length,
+      ...savedPhase1,
+      exhausted: isExhausted,
+      aiPending: false,
     };
   }
 
-  const next = advanceScriptedChunk(latest, preset, new Date().toISOString(), analysisOverride);
-  const saved = ctx.store.setState(next);
+  const aiTask = analyzeCallChunk(upcomingChunk.text, {
+    previousTranscript: historyBeforeChunk,
+    screenSharing: savedPhase1.state.call.detection.signals.screenSharing,
+  }).then((analysis) => {
+    const latest = ctx.store.getState();
+    if (latest.sessionId !== startSessionId) {
+      return;
+    }
+    const merged = applyAiDetection(latest, {
+      aiScore: Math.max(upcomingChunk.aiScore ?? 0, analysis.aiProbability),
+      tactics: analysis.tactics.length > 0 ? analysis.tactics : upcomingChunk.flaggedTactics,
+      reasoning: analysis.summary,
+      source: analysis.source,
+    });
+    ctx.store.setState(merged);
+  });
+
+  ctx.store.trackAiTask(startSessionId, aiTask);
+
+  if (waitForAi) {
+    await aiTask;
+    const latestSnapshot = ctx.store.getSnapshot();
+    return {
+      ...latestSnapshot,
+      exhausted: latestSnapshot.state.scriptedChunkIndex >= preset.scriptedChunks.length,
+      aiPending: false,
+    };
+  }
 
   return {
-    ...saved,
-    exhausted: next.scriptedChunkIndex >= preset.scriptedChunks.length,
+    ...savedPhase1,
+    exhausted: isExhausted,
+    aiPending: true,
   };
 }
 
@@ -182,7 +204,16 @@ export async function executeTransfer({
   ctx,
   input,
 }: PublicResolverOptions & { input: SubmitTransferSchemaInput }) {
-  const current = ctx.store.getState();
+  let current = ctx.store.getState();
+
+  // Pre-Transfer Gate: if a live call is active and AI scoring is still in flight,
+  // hold settlement briefly so AI can engage Mirage before real funds leave the bank.
+  const preTransferGate =
+    current.mode === "normal" && current.call.active
+      ? await ctx.store.waitForPendingAi(current.sessionId, PRE_TRANSFER_AI_WAIT_MS)
+      : { waitedMs: 0, timedOut: false, hadPending: false };
+
+  current = ctx.store.getState();
   const wasAlertSent = current.trustedAlertSent;
   const preset = getPresetById(current.presetId);
 
@@ -204,6 +235,7 @@ export async function executeTransfer({
     errorMessage: result.errorMessage,
     receipt: result.receipt,
     capturedMule: result.capturedMule,
+    preTransferGate,
     telegram,
     ...saved,
   };

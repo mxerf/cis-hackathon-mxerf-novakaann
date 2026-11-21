@@ -64,7 +64,7 @@ try {
 
     for (let i = 1; i <= 3; i += 1) {
       const t0 = performance.now();
-      const res = await client.mirage.nextChunk.mutate({ analyzeWithAi: true });
+      const res = await client.mirage.nextChunk.mutate({ analyzeWithAi: true, waitForAi: true });
       steps.push(summarizeStep(`chunk-${i}`, res.state, Math.round(performance.now() - t0)));
     }
 
@@ -76,7 +76,7 @@ try {
     });
 
     const t4 = performance.now();
-    const chunk4 = await client.mirage.nextChunk.mutate({ analyzeWithAi: true });
+    const chunk4 = await client.mirage.nextChunk.mutate({ analyzeWithAi: true, waitForAi: true });
     steps.push(summarizeStep("chunk-4", chunk4.state, Math.round(performance.now() - t4)));
 
     const tx2 = await client.mirage.submitTransfer.mutate({
@@ -123,6 +123,7 @@ try {
       speaker: "caller",
       text: "Добрый день, это старший специалист службы безопасности банка. По вашей карте зафиксировано подозрительное списание на 18 000 дирхам. Вы подтверждаете эту операцию?",
       analyzeWithAi: true,
+      waitForAi: true,
     });
     steps.push(summarizeStep("ru-1-opener", res.state, Math.round(performance.now() - t0)));
 
@@ -138,6 +139,7 @@ try {
       speaker: "caller",
       text: "Оставайтесь на линии и никому не говорите. Включите демонстрацию экрана, чтобы я помог отменить списание. Для отмены прямо сейчас переведите 18 000 AED на технический безопасный счёт AE070331234567890123456.",
       analyzeWithAi: true,
+      waitForAi: true,
     });
     steps.push(summarizeStep("ru-3-escalation", res.state, Math.round(performance.now() - t0)));
 
@@ -152,6 +154,7 @@ try {
       speaker: "caller",
       text: "Сработал лимит? Быстро переводите на резервную карту 4532 1900 8821 7742 в течение 3 минут, иначе деньги спишутся!",
       analyzeWithAi: true,
+      waitForAi: true,
     });
     steps.push(summarizeStep("ru-4-pivot", res.state, Math.round(performance.now() - t0)));
 
@@ -197,6 +200,7 @@ try {
       speaker: "caller",
       text: "Good afternoon, calling from du Regulatory Compliance. Your Emirates ID KYC record is expiring today — have you already updated your profile?",
       analyzeWithAi: true,
+      waitForAi: true,
     });
     steps.push(summarizeStep("du-1-opener", res.state, Math.round(performance.now() - t0)));
 
@@ -205,6 +209,7 @@ try {
       speaker: "caller",
       text: "Central Bank case #CB-8841 is open with a 50,000 AED penalty. Do not hang up and do not call anyone. Transfer 10,000 AED immediately to temporary safe-custody IBAN AE070331234567890123456.",
       analyzeWithAi: true,
+      waitForAi: true,
     });
     steps.push(summarizeStep("du-2-coercion", res.state, Math.round(performance.now() - t0)));
 
@@ -249,6 +254,7 @@ try {
       speaker: "caller",
       text: "Good afternoon! This is your relationship manager at Pulse Bank calling to confirm your travel dates for Europe next week so your card works smoothly abroad. You never need to share any codes or make any transfers.",
       analyzeWithAi: true,
+      waitForAi: true,
     });
 
     const tx = await client.mirage.submitTransfer.mutate({

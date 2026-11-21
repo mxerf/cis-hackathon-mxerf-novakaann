@@ -18,6 +18,7 @@ export const ingestTranscriptSchema = z.object({
   speaker: z.enum(["caller", "victim", "ai_decoy"]).default("caller"),
   text: z.string().min(1).max(1000),
   analyzeWithAi: z.boolean().optional().default(true),
+  waitForAi: z.boolean().optional().default(false),
   coercionScoreDelta: z.number().min(0).max(100).optional(),
   flaggedTactics: z.array(z.string().min(1)).optional(),
 });
@@ -25,6 +26,7 @@ export const ingestTranscriptSchema = z.object({
 export const nextChunkSchema = z
   .object({
     analyzeWithAi: z.boolean().optional().default(false),
+    waitForAi: z.boolean().optional().default(false),
   })
   .optional();
 

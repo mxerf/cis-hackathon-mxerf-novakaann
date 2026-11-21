@@ -59,11 +59,14 @@ function recomputeCallDetection(
   call: CallSession,
   signals: DetectionSignals,
   ai: AiDetection,
+  pendingTransferDrainRatio?: number,
 ): CallSession {
   const algorithm = evaluateAlgorithmLevel({
     callActive: call.active,
     signals,
     transcript: call.transcript,
+    simAgeDays: call.simAgeDays,
+    pendingTransferDrainRatio,
   });
   const combinedScore = combineDetectionScores(algorithm.score, ai.score);
 
@@ -267,6 +270,49 @@ export function ingestTranscriptChunk(
   return maybeEngageMirage(state, nextCall);
 }
 
+export function applyAiDetection(
+  state: MirageState,
+  input: {
+    aiScore: number;
+    tactics: string[];
+    reasoning: string;
+    source: "ai" | "fallback";
+  },
+): MirageState {
+  const prevAi = state.call.detection.ai;
+  const nextAi: AiDetection = {
+    score: clampScore(Math.max(prevAi.score, input.aiScore)),
+    tactics: [...new Set([...prevAi.tactics, ...input.tactics])],
+    reasoning: input.reasoning.trim() || prevAi.reasoning,
+    source: input.source,
+  };
+
+  const nextCall = recomputeCallDetection(state.call, state.call.detection.signals, nextAi);
+  return maybeEngageMirage(state, nextCall);
+}
+
+export function evaluatePreTransferRisk(
+  state: MirageState,
+  fromAccountId: string,
+  amount: number,
+): MirageState {
+  if (state.mode !== "normal" || !state.call.active) {
+    return state;
+  }
+  const sourceAccount = state.realAccounts.find((acc) => acc.id === fromAccountId);
+  if (!sourceAccount || sourceAccount.balance <= 0) {
+    return state;
+  }
+  const drainRatio = amount / sourceAccount.balance;
+  const nextCall = recomputeCallDetection(
+    state.call,
+    state.call.detection.signals,
+    state.call.detection.ai,
+    drainRatio,
+  );
+  return maybeEngageMirage(state, nextCall);
+}
+
 export function advanceScriptedChunk(
   state: MirageState,
   preset: ScenarioPreset = getPresetById(state.presetId),
@@ -323,16 +369,17 @@ export function submitTransfer(
 
   const amount = Math.round(input.amount * 100) / 100;
   const now = input.now ?? new Date().toISOString();
-  const refCode = `Ref #${preset.refPrefix}-${input.refSuffix ?? makeShortCode(`${recipientValue}:${amount}:${now}:${state.receipts.length}`)}`;
+  const evaluatedState = evaluatePreTransferRisk(state, input.fromAccountId, amount);
+  const refCode = `Ref #${preset.refPrefix}-${input.refSuffix ?? makeShortCode(`${recipientValue}:${amount}:${now}:${evaluatedState.receipts.length}`)}`;
 
-  if (state.mode === "normal") {
-    const sourceAccount = state.realAccounts.find((acc) => acc.id === input.fromAccountId);
+  if (evaluatedState.mode === "normal") {
+    const sourceAccount = evaluatedState.realAccounts.find((acc) => acc.id === input.fromAccountId);
     if (!sourceAccount) {
       return {
-        state,
+        state: evaluatedState,
         outcome: "invalid_input",
         errorMessage:
-          state.locale === "ru"
+          evaluatedState.locale === "ru"
             ? "Выбранный счёт не найден."
             : "Selected source account not found.",
       };
@@ -340,16 +387,16 @@ export function submitTransfer(
 
     if (sourceAccount.balance < amount) {
       return {
-        state,
+        state: evaluatedState,
         outcome: "insufficient_funds",
         errorMessage:
-          state.locale === "ru"
+          evaluatedState.locale === "ru"
             ? "Недостаточно средств на выбранном счёте."
             : "Insufficient balance in selected account.",
       };
     }
 
-    const updatedReal = state.realAccounts.map((acc) =>
+    const updatedReal = evaluatedState.realAccounts.map((acc) =>
       acc.id === sourceAccount.id
         ? { ...acc, balance: Math.round((acc.balance - amount) * 100) / 100 }
         : acc,
@@ -361,15 +408,15 @@ export function submitTransfer(
       currency: sourceAccount.currency,
       recipientValue,
       createdAt: now,
-      statusLabel: preset.normalReceiptStatusLabel[state.locale],
+      statusLabel: preset.normalReceiptStatusLabel[evaluatedState.locale],
     };
 
     return {
       state: {
-        ...state,
+        ...evaluatedState,
         realAccounts: updatedReal,
         mirageAccounts: cloneAccounts(updatedReal),
-        receipts: [receipt, ...state.receipts],
+        receipts: [receipt, ...evaluatedState.receipts],
       },
       outcome: "completed",
       receipt,
@@ -377,28 +424,30 @@ export function submitTransfer(
   }
 
   // Mirage mode invariant: realAccounts never decreases under coercion.
-  const mirageSource = state.mirageAccounts.find((acc) => acc.id === input.fromAccountId);
+  const mirageSource = evaluatedState.mirageAccounts.find((acc) => acc.id === input.fromAccountId);
   if (!mirageSource) {
     return {
-      state,
+      state: evaluatedState,
       outcome: "invalid_input",
       errorMessage:
-        state.locale === "ru" ? "Выбранный счёт не найден." : "Selected source account not found.",
+        evaluatedState.locale === "ru"
+          ? "Выбранный счёт не найден."
+          : "Selected source account not found.",
     };
   }
 
   if (mirageSource.balance < amount) {
     return {
-      state,
+      state: evaluatedState,
       outcome: "insufficient_funds",
       errorMessage:
-        state.locale === "ru"
+        evaluatedState.locale === "ru"
           ? "Недостаточно средств на выбранном счёте."
           : "Insufficient balance in selected account.",
     };
   }
 
-  const attemptNumber = state.capturedMules.length + 1;
+  const attemptNumber = evaluatedState.capturedMules.length + 1;
   const capturedMule: MuleArtifact = {
     id: `mule-${attemptNumber}-${makeShortCode(`${recipientValue}:${attemptNumber}`)}`,
     kind: detectMuleKind(recipientValue),
@@ -410,22 +459,22 @@ export function submitTransfer(
     capturedAt: now,
   };
 
-  const nextCapturedMules = [...state.capturedMules, capturedMule];
+  const nextCapturedMules = [...evaluatedState.capturedMules, capturedMule];
 
-  if (state.honeytrapStage === "armed") {
+  if (evaluatedState.honeytrapStage === "armed") {
     return {
       state: {
-        ...state,
+        ...evaluatedState,
         honeytrapStage: "first_mule_rejected",
         capturedMules: nextCapturedMules,
       },
       outcome: "rejected_honeytrap",
-      errorMessage: preset.honeytrapRejectionMessage[state.locale],
+      errorMessage: preset.honeytrapRejectionMessage[evaluatedState.locale],
       capturedMule,
     };
   }
 
-  const updatedMirage = state.mirageAccounts.map((acc) =>
+  const updatedMirage = evaluatedState.mirageAccounts.map((acc) =>
     acc.id === mirageSource.id
       ? { ...acc, balance: Math.round((acc.balance - amount) * 100) / 100 }
       : acc,
@@ -437,16 +486,16 @@ export function submitTransfer(
     currency: mirageSource.currency,
     recipientValue,
     createdAt: now,
-    statusLabel: preset.decoyReceiptStatusLabel[state.locale],
+    statusLabel: preset.decoyReceiptStatusLabel[evaluatedState.locale],
   };
 
   return {
     state: {
-      ...state,
+      ...evaluatedState,
       mirageAccounts: updatedMirage,
       honeytrapStage: "completed",
       capturedMules: nextCapturedMules,
-      receipts: [receipt, ...state.receipts],
+      receipts: [receipt, ...evaluatedState.receipts],
       trustedAlertSent: true,
     },
     outcome: "mirage_completed",
