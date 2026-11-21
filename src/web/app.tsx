@@ -1,17 +1,21 @@
-import {
-  ExternalLink,
-  Loader2,
-  RefreshCw,
-  ShieldAlert,
-  ShieldCheck,
-  Wifi,
-  WifiOff,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { TranscriptSpeaker } from "../shared/mirage-types.ts";
+import { MiragePanel } from "./features/mirage/mirage-panel.tsx";
 import { MobileWallet } from "./features/mirage/mobile-wallet.tsx";
 import { PhoneFrame } from "./features/mirage/phone-frame.tsx";
+import { PresenterBar } from "./features/mirage/presenter-bar.tsx";
 import { useMirageSync } from "./features/mirage/use-mirage-sync.ts";
-import { XRayPanel } from "./features/mirage/xray-panel.tsx";
 import { getUiCopy } from "./lib/ui-copy.ts";
+
+const INTRO_CHUNK_DELAY_MS = 1400;
+
+function computeStageScale(): number {
+  return Math.max(
+    0.45,
+    Math.min(1, (window.innerHeight - 56 - 32) / 780, (window.innerWidth - 40) / 1040),
+  );
+}
 
 export function App() {
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
@@ -33,26 +37,174 @@ export function App() {
     resetDemo,
   } = useMirageSync();
 
+  const [stageScale, setStageScale] = useState<number>(() => computeStageScale());
+  const [useLiveAi, setUseLiveAi] = useState(true);
+  const [callerVoice, setCallerVoice] = useState(false);
+  const [isStartingDemo, setIsStartingDemo] = useState(false);
+  const [revealedSessionId, setRevealedSessionId] = useState<string | null>(null);
+  const [blockedSessionId, setBlockedSessionId] = useState<string | null>(null);
+
+  const introTimerRef = useRef<number | null>(null);
+  const demoRunIdRef = useRef(0);
+  const spokenIdsRef = useRef<Set<string>>(new Set());
+  const lastSessionIdRef = useRef<string>("");
+
+  const cancelIntroSequence = useCallback(() => {
+    demoRunIdRef.current += 1;
+    if (introTimerRef.current !== null) {
+      window.clearTimeout(introTimerRef.current);
+      introTimerRef.current = null;
+    }
+    setIsStartingDemo(false);
+  }, []);
+
+  useEffect(() => {
+    function handleResize() {
+      setStageScale(computeStageScale());
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (introTimerRef.current !== null) {
+        window.clearTimeout(introTimerRef.current);
+      }
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!state) {
+      return;
+    }
+    if (lastSessionIdRef.current !== state.sessionId) {
+      lastSessionIdRef.current = state.sessionId;
+      spokenIdsRef.current = new Set(state.call.transcript.map((entry) => entry.id));
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+      return;
+    }
+
+    for (const entry of state.call.transcript) {
+      if (spokenIdsRef.current.has(entry.id)) {
+        continue;
+      }
+      spokenIdsRef.current.add(entry.id);
+      if (callerVoice && entry.speaker === "caller" && "speechSynthesis" in window) {
+        const utterance = new SpeechSynthesisUtterance(entry.text);
+        utterance.rate = 1.02;
+        utterance.lang = /[А-Яа-яЁё]/.test(entry.text) ? "ru-RU" : "en-US";
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+  }, [callerVoice, state]);
+
+  const handleToggleCallerVoice = useCallback((enabled: boolean) => {
+    setCallerVoice(enabled);
+    if (!enabled && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  }, []);
+
+  const handleStartDemo = useCallback(() => {
+    if (isStartingDemo) {
+      return;
+    }
+    cancelIntroSequence();
+    const runId = demoRunIdRef.current;
+    setIsStartingDemo(true);
+
+    void (async () => {
+      try {
+        await startCall();
+        if (demoRunIdRef.current !== runId) {
+          return;
+        }
+        await playNextChunk(useLiveAi);
+        if (demoRunIdRef.current !== runId) {
+          return;
+        }
+
+        introTimerRef.current = window.setTimeout(() => {
+          introTimerRef.current = null;
+          if (demoRunIdRef.current !== runId) {
+            return;
+          }
+          void playNextChunk(useLiveAi).finally(() => {
+            if (demoRunIdRef.current === runId) {
+              setIsStartingDemo(false);
+            }
+          });
+        }, INTRO_CHUNK_DELAY_MS);
+      } catch {
+        if (demoRunIdRef.current === runId) {
+          setIsStartingDemo(false);
+        }
+      }
+    })();
+  }, [cancelIntroSequence, isStartingDemo, playNextChunk, startCall, useLiveAi]);
+
+  const handleEndCall = useCallback(async () => {
+    cancelIntroSequence();
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    await endCall();
+  }, [cancelIntroSequence, endCall]);
+
+  const handleReset = useCallback(() => {
+    cancelIntroSequence();
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    setRevealedSessionId(null);
+    setBlockedSessionId(null);
+    void resetDemo();
+  }, [cancelIntroSequence, resetDemo]);
+
+  const handleInjectTranscript = useCallback(
+    async (speaker: TranscriptSpeaker, text: string) => {
+      await injectTranscript(speaker, text, useLiveAi);
+    },
+    [injectTranscript, useLiveAi],
+  );
+
   if (!state || !preset) {
+    const fallbackCopy = getUiCopy("en");
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin text-sky-400" />
-        <span className="text-xs font-medium">Connecting to Mirage tRPC…</span>
+      <div
+        className={`flex h-full w-full items-center justify-center ${
+          isMobileRoute
+            ? "dark bg-black text-[var(--foreground)]"
+            : "bg-[var(--background)] text-[var(--foreground)]"
+        }`}
+      >
+        <Loader2 className="mr-2 h-4 w-4 animate-spin text-[var(--primary)]" />
+        <span className="text-xs font-semibold">{fallbackCopy.connectingLabel}</span>
       </div>
     );
   }
 
-  const copy = getUiCopy(state.locale);
+  const isScreenSharing = state.call.detection.signals.screenSharing;
+  const isRevealed = revealedSessionId === state.sessionId;
+  const isCallerBlocked = blockedSessionId === state.sessionId;
 
   if (isMobileRoute) {
     return (
-      <div className="min-h-screen bg-white">
-        <div className="mx-auto min-h-screen max-w-md shadow-sm">
+      <div className="dark flex h-[100dvh] w-full justify-center overflow-hidden bg-black">
+        <div className="relative flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-black text-[var(--foreground)]">
           <MobileWallet
             key={state.sessionId}
             state={state}
             preset={preset}
             isBusy={isBusy}
+            startUnlocked
+            onEndCall={handleEndCall}
             onUpdateSignals={updateSignals}
             onSubmitTransfer={submitTransfer}
             onSendSupport={sendSupportMessage}
@@ -63,112 +215,53 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800/80 bg-slate-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <span className="text-base font-bold tracking-tight text-white">{copy.appTitle}</span>
-            <span className="rounded-md bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-300">
-              {copy.stageBadge}
-            </span>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                state.mode === "mirage"
-                  ? "bg-rose-500/20 text-rose-200 ring-1 ring-rose-500/40"
-                  : "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30"
-              }`}
-            >
-              {state.mode === "mirage" ? (
-                <ShieldAlert className="h-3.5 w-3.5" />
-              ) : (
-                <ShieldCheck className="h-3.5 w-3.5" />
-              )}
-              {state.mode === "mirage" ? copy.modeMirage : copy.modeNormal}
-            </span>
-          </div>
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
+      <PresenterBar
+        state={state}
+        preset={preset}
+        isConnected={isConnected}
+        isBusy={isBusy}
+        isStartingDemo={isStartingDemo}
+        useLiveAi={useLiveAi}
+        callerVoice={callerVoice}
+        onStartDemo={handleStartDemo}
+        onPlayNextChunk={() => void playNextChunk(useLiveAi)}
+        onEndCall={() => void handleEndCall()}
+        onToggleSharing={() => void updateSignals({ screenSharing: !isScreenSharing })}
+        onReset={handleReset}
+        onToggleLiveAi={setUseLiveAi}
+        onToggleCallerVoice={handleToggleCallerVoice}
+        onSwitchLocale={(locale) => void switchLocale(locale)}
+      />
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium ${
-                isConnected
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                  : "border-amber-500/30 bg-amber-500/10 text-amber-300"
-              }`}
-            >
-              {isConnected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-              {isConnected ? copy.connected : copy.reconnecting}
-            </span>
+      <main className="flex h-[calc(100%-56px)] w-full items-center justify-center overflow-hidden">
+        <div
+          className="flex h-[780px] w-[1040px] flex-none origin-center gap-[60px]"
+          style={{ transform: `scale(${stageScale})` }}
+        >
+          <MiragePanel
+            state={state}
+            preset={preset}
+            isBusy={isBusy}
+            isRevealed={isRevealed}
+            isCallerBlocked={isCallerBlocked}
+            onInjectTranscript={handleInjectTranscript}
+          />
 
-            <div className="inline-flex overflow-hidden rounded-lg border border-slate-700 bg-slate-900 text-[11px] font-semibold">
-              <button
-                type="button"
-                onClick={() => void switchLocale("en")}
-                className={`px-2.5 py-1 transition ${
-                  state.locale === "en"
-                    ? "bg-sky-600 text-white"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                EN
-              </button>
-              <button
-                type="button"
-                onClick={() => void switchLocale("ru")}
-                className={`px-2.5 py-1 transition ${
-                  state.locale === "ru"
-                    ? "bg-sky-600 text-white"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                RU
-              </button>
-            </div>
-
-            <a
-              href="/mobile"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs font-medium text-slate-200 transition hover:border-sky-500 hover:text-white"
-            >
-              {copy.mobileViewLink}
-              <ExternalLink className="h-3 w-3" />
-            </a>
-
-            <button
-              type="button"
-              disabled={isBusy}
-              onClick={() => void resetDemo()}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs font-medium text-slate-200 transition hover:border-rose-500 hover:text-rose-200 disabled:opacity-50"
-            >
-              <RefreshCw className="h-3 w-3" />
-              {copy.resetDemo}
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_410px] lg:items-start">
-        <XRayPanel
-          state={state}
-          preset={preset}
-          isBusy={isBusy}
-          onStartCall={startCall}
-          onEndCall={endCall}
-          onUpdateSignals={updateSignals}
-          onPlayNextChunk={playNextChunk}
-          onInjectTranscript={injectTranscript}
-        />
-
-        <div className="lg:sticky lg:top-6">
           <PhoneFrame>
             <MobileWallet
               key={state.sessionId}
               state={state}
               preset={preset}
               isBusy={isBusy}
+              onEndCall={handleEndCall}
               onUpdateSignals={updateSignals}
               onSubmitTransfer={submitTransfer}
               onSendSupport={sendSupportMessage}
+              onRevealChange={(revealed) => setRevealedSessionId(revealed ? state.sessionId : null)}
+              onCallerBlockedChange={(blocked) =>
+                setBlockedSessionId(blocked ? state.sessionId : null)
+              }
             />
           </PhoneFrame>
         </div>

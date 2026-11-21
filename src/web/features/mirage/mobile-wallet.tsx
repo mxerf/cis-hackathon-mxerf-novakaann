@@ -1,32 +1,43 @@
-import {
-  AlertCircle,
-  ArrowUpRight,
-  CheckCircle2,
-  Landmark,
-  MessageSquare,
-  MonitorUp,
-  PhoneCall,
-  Send,
-  Wallet,
-} from "lucide-react";
-import { motion } from "motion/react";
-import { useState } from "react";
+import { ArrowLeftRight, CreditCard, Home, LayoutGrid, MessageSquare } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getVisibleAccounts,
   type DecoyReceipt,
   type DetectionSignals,
   type MirageState,
   type ScenarioPreset,
+  type SuggestedMule,
 } from "../../../shared/mirage-types.ts";
-import { formatMoney, getUiCopy } from "../../lib/ui-copy.ts";
+import { getUiCopy, shortIban } from "../../lib/ui-copy.ts";
+import { WalletHome } from "./wallet-home.tsx";
+import {
+  WalletHappened,
+  WalletLock,
+  WalletReceipt,
+  WalletStatements,
+} from "./wallet-receipt-flow.tsx";
+import { WalletReview, WalletSend } from "./wallet-send.tsx";
+import { WalletSheets, type WalletSheetKind } from "./wallet-sheets.tsx";
+import { WalletSupportChat } from "./wallet-support-chat.tsx";
 import type { TransferActionResponse } from "./use-mirage-sync.ts";
 
-type WalletTab = "home" | "transfer" | "support";
+type WalletScreen =
+  | "lock"
+  | "home"
+  | "send"
+  | "review"
+  | "complete"
+  | "happened"
+  | "statements"
+  | "statement"
+  | "chat";
 
 export type MobileWalletProps = {
   state: MirageState;
   preset: ScenarioPreset;
   isBusy: boolean;
+  startUnlocked?: boolean;
+  onEndCall: () => Promise<void>;
   onUpdateSignals: (patch: Partial<DetectionSignals>) => Promise<void>;
   onSubmitTransfer: (input: {
     fromAccountId: string;
@@ -35,386 +46,623 @@ export type MobileWalletProps = {
     amount: number;
   }) => Promise<TransferActionResponse | null>;
   onSendSupport: (text: string) => Promise<void>;
+  onRevealChange?: (revealed: boolean) => void;
+  onCallerBlockedChange?: (blocked: boolean) => void;
 };
+
+const NEUTRAL_BENEFICIARY_BY_IBAN: Record<string, { en: string; ru: string }> = {
+  AE070331234567890123456: {
+    en: "UAEFTS Clearing Transit",
+    ru: "Транзитный счёт UAEFTS",
+  },
+  AE460090000000123456789: {
+    en: "Reserve Clearing Account",
+    ru: "Резервный клиринговый счёт",
+  },
+};
+
+function sanitizeBeneficiaryLabel(rawLabel: string, rawValue: string, locale: "en" | "ru"): string {
+  const normalized = rawValue.replace(/[\s-]/g, "").toUpperCase();
+  const mapped = NEUTRAL_BENEFICIARY_BY_IBAN[normalized];
+  if (mapped) {
+    return mapped[locale];
+  }
+  if (/scammer|mule|дроп|мошенник/i.test(rawLabel)) {
+    return locale === "ru" ? "Внешний получатель" : "External Beneficiary";
+  }
+  return rawLabel || shortIban(rawValue);
+}
+
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
 
 export function MobileWallet({
   state,
   preset,
   isBusy,
+  startUnlocked = false,
+  onEndCall,
   onUpdateSignals,
   onSubmitTransfer,
   onSendSupport,
+  onRevealChange,
+  onCallerBlockedChange,
 }: MobileWalletProps) {
   const copy = getUiCopy(state.locale);
-  const visibleAccounts = getVisibleAccounts(state);
-  const defaultAccountId = visibleAccounts[0]?.id ?? "acc-checking";
-  const defaultSuggestedAmount = String(preset.suggestedMules[0]?.suggestedAmount ?? 14500);
+  const isScreenSharing = state.call.detection.signals.screenSharing;
+  const isCallOrActivityStarted =
+    state.call.active || state.call.transcript.length > 0 || state.receipts.length > 0;
 
-  const [tab, setTab] = useState<WalletTab>("home");
-  const [fromAccountId, setFromAccountId] = useState(defaultAccountId);
+  const [screen, setScreen] = useState<WalletScreen>(
+    startUnlocked || isCallOrActivityStarted ? "home" : "lock",
+  );
+  const [selectedAccountId, setSelectedAccountId] = useState(
+    state.realAccounts[0]?.id ?? "acc-checking",
+  );
+  const [fromAccountId, setFromAccountId] = useState(state.realAccounts[0]?.id ?? "acc-checking");
   const [recipientValue, setRecipientValue] = useState("");
   const [recipientLabel, setRecipientLabel] = useState("");
-  const [amountInput, setAmountInput] = useState(defaultSuggestedAmount);
-  const [transferError, setTransferError] = useState<string | null>(null);
-  const [latestReceipt, setLatestReceipt] = useState<DecoyReceipt | null>(null);
-  const [supportDraft, setSupportDraft] = useState("");
+  const [amountInput, setAmountInput] = useState("");
+  const [highlightBackupMule, setHighlightBackupMule] = useState(false);
+  const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
+  const [cb412Error, setCb412Error] = useState("");
+  const [activeSheet, setActiveSheet] = useState<WalletSheetKind>(null);
+  const [selectedReceipt, setSelectedReceipt] = useState<DecoyReceipt | null>(null);
+  const [showLockPush, setShowLockPush] = useState(false);
+  const [hasRevealed, setHasRevealed] = useState(false);
+  const [isCallerBlocked, setIsCallerBlocked] = useState(false);
+  const [toastText, setToastText] = useState<string | null>(null);
+  const [callSeconds, setCallSeconds] = useState(0);
 
-  const totalBalance = visibleAccounts.reduce((sum, account) => sum + account.balance, 0);
-  const primaryCurrency = visibleAccounts[0]?.currency ?? preset.currency;
-  const isScreenSharing = state.call.detection.signals.screenSharing;
+  const toastTimerRef = useRef<number | null>(null);
+  const callStartRef = useRef<number | null>(state.call.active ? Date.now() : null);
 
-  async function handleTransferSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setTransferError(null);
-    setLatestReceipt(null);
+  const showToast = useCallback((message: string) => {
+    setToastText(message);
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastText(null);
+      toastTimerRef.current = null;
+    }, 2600);
+  }, []);
 
-    const parsedAmount = Number(amountInput.replace(/,/g, "").trim());
-    const response = await onSubmitTransfer({
-      fromAccountId,
-      recipientValue,
-      recipientLabel: recipientLabel || undefined,
-      amount: parsedAmount,
-    });
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
-    if (!response) {
-      setTransferError("Network error while processing transfer.");
+  useEffect(() => {
+    if (screen === "lock" && !showLockPush && isCallOrActivityStarted) {
+      setScreen("home");
+    }
+  }, [isCallOrActivityStarted, screen, showLockPush]);
+
+  useEffect(() => {
+    if (!state.call.active) {
+      callStartRef.current = null;
       return;
     }
-
-    if (response.errorMessage) {
-      setTransferError(response.errorMessage);
+    if (callStartRef.current === null) {
+      callStartRef.current = Date.now();
+      setCallSeconds(0);
     }
+    const intervalId = window.setInterval(() => {
+      if (callStartRef.current !== null) {
+        setCallSeconds(Math.floor((Date.now() - callStartRef.current) / 1000));
+      }
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [state.call.active]);
 
-    if (response.receipt) {
-      setLatestReceipt(response.receipt);
-      setRecipientValue("");
-      setRecipientLabel("");
+  useEffect(() => {
+    if (isScreenSharing && activeSheet === "details") {
+      setActiveSheet(null);
     }
-  }
+  }, [activeSheet, isScreenSharing]);
 
-  async function handleSupportSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = supportDraft.trim();
-    if (!trimmed) {
-      return;
+  useEffect(() => {
+    const canRevealNow =
+      state.mode === "mirage" &&
+      state.receipts.length > 0 &&
+      !state.call.active &&
+      !isScreenSharing &&
+      !hasRevealed;
+
+    if (canRevealNow) {
+      setHasRevealed(true);
+      setShowLockPush(true);
+      setActiveSheet(null);
+      onRevealChange?.(true);
     }
-    setSupportDraft("");
-    await onSendSupport(trimmed);
-  }
+  }, [
+    hasRevealed,
+    isScreenSharing,
+    onRevealChange,
+    state.call.active,
+    state.mode,
+    state.receipts.length,
+  ]);
 
-  function handleRecipientPaste() {
+  const displayedAccounts = hasRevealed ? state.realAccounts : getVisibleAccounts(state);
+  const activeAccount =
+    displayedAccounts.find((acc) => acc.id === selectedAccountId) ?? displayedAccounts[0];
+  const fromAccount =
+    displayedAccounts.find((acc) => acc.id === fromAccountId) ?? displayedAccounts[0];
+  const latestReceipt = selectedReceipt ?? state.receipts[0] ?? null;
+
+  const recipientDisplayName = useCallback(
+    (rawValue: string): string => {
+      const normalized = rawValue.replace(/[\s-]/g, "").toUpperCase();
+      const matchedMule = state.capturedMules.find(
+        (m) => m.value.replace(/[\s-]/g, "").toUpperCase() === normalized,
+      );
+      if (matchedMule?.label) {
+        return sanitizeBeneficiaryLabel(matchedMule.label, rawValue, state.locale);
+      }
+      const matchedSuggested = preset.suggestedMules.find(
+        (m) => m.value.replace(/[\s-]/g, "").toUpperCase() === normalized,
+      );
+      if (matchedSuggested?.label) {
+        return sanitizeBeneficiaryLabel(matchedSuggested.label, rawValue, state.locale);
+      }
+      return shortIban(rawValue);
+    },
+    [preset.suggestedMules, state.capturedMules, state.locale],
+  );
+
+  const markClipboardPaste = useCallback(() => {
     if (state.call.active && !state.call.detection.signals.clipboardPasteDetected) {
       void onUpdateSignals({ clipboardPasteDetected: true });
     }
+  }, [onUpdateSignals, state.call.active, state.call.detection.signals.clipboardPasteDetected]);
+
+  const handleKeypadInput = useCallback((key: string) => {
+    setAmountInput((prev) => {
+      if (key === "del") {
+        return prev.slice(0, -1);
+      }
+      if (key === ".") {
+        if (prev.includes(".")) {
+          return prev;
+        }
+        return `${prev || "0"}.`;
+      }
+      if (prev.includes(".")) {
+        const decimals = prev.split(".")[1] ?? "";
+        return decimals.length < 2 ? `${prev}${key}` : prev;
+      }
+      if (prev.length >= 7) {
+        return prev;
+      }
+      return `${prev === "0" ? "" : prev}${key}`;
+    });
+  }, []);
+
+  function handleSelectSuggestedMule(mule: SuggestedMule) {
+    setRecipientValue(mule.value);
+    setRecipientLabel(sanitizeBeneficiaryLabel(mule.label, mule.value, state.locale));
+    setAmountInput(String(mule.suggestedAmount));
+    setHighlightBackupMule(false);
+    markClipboardPaste();
   }
 
+  function handleCycleFromAccount() {
+    if (displayedAccounts.length <= 1) {
+      return;
+    }
+    const idx = displayedAccounts.findIndex((acc) => acc.id === fromAccountId);
+    const next = displayedAccounts[(idx + 1) % displayedAccounts.length];
+    if (next) {
+      setFromAccountId(next.id);
+    }
+  }
+
+  async function handleConfirmTransfer() {
+    if (isSubmittingTransfer || !fromAccount) {
+      return;
+    }
+    const numericAmount = Number(amountInput);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0 || !recipientValue.trim()) {
+      return;
+    }
+
+    setIsSubmittingTransfer(true);
+    try {
+      const response = await onSubmitTransfer({
+        fromAccountId: fromAccount.id,
+        recipientValue: recipientValue.trim(),
+        recipientLabel: recipientLabel.trim() || undefined,
+        amount: numericAmount,
+      });
+
+      if (!response) {
+        showToast(copy.toastNetworkError);
+        return;
+      }
+
+      if (response.outcome === "rejected_honeytrap") {
+        setCb412Error(response.errorMessage ?? preset.honeytrapRejectionMessage[state.locale]);
+        setActiveSheet("honeytrap_cb412");
+        return;
+      }
+
+      if (response.receipt) {
+        setSelectedReceipt(response.receipt);
+        setHighlightBackupMule(false);
+        setScreen("complete");
+        return;
+      }
+
+      if (response.errorMessage) {
+        showToast(response.errorMessage);
+      }
+    } finally {
+      setIsSubmittingTransfer(false);
+    }
+  }
+
+  async function handleToggleSharing() {
+    const next = !isScreenSharing;
+    if (next) {
+      setActiveSheet((prev) => (prev === "details" ? null : prev));
+    }
+    await onUpdateSignals({ screenSharing: next });
+    showToast(next ? copy.toastSharingStarted : copy.toastSharingStopped);
+  }
+
+  async function handleEndCallFromSheet() {
+    setActiveSheet(null);
+    await onEndCall();
+  }
+
+  function handleUseAlternateIban() {
+    setActiveSheet(null);
+    setRecipientValue("");
+    setRecipientLabel("");
+    setHighlightBackupMule(true);
+    setScreen("send");
+  }
+
+  function handleOpenPush() {
+    setShowLockPush(false);
+    setScreen("home");
+    setActiveSheet("revealed_safe");
+  }
+
+  function handleBlockCaller() {
+    setIsCallerBlocked(true);
+    onCallerBlockedChange?.(true);
+    showToast(copy.toastNumberBlocked);
+  }
+
+  const callerEntries = state.call.transcript.filter((entry) => entry.speaker === "caller");
+  const latestCallerLine =
+    [...callerEntries]
+      .reverse()
+      .find((entry) => /cancel|reverse|refund|mirror|отмен|зеркальн/i.test(entry.text))?.text ??
+    callerEntries[callerEntries.length - 1]?.text ??
+    "Let's cancel that 14,500 AED payment.";
+
+  const stoppedAmount = latestReceipt?.amount ?? preset.suggestedMules[0]?.suggestedAmount ?? 14500;
+  const fallbackMule = preset.suggestedMules[1] ?? preset.suggestedMules[0];
+  const stoppedRecipient = latestReceipt
+    ? recipientDisplayName(latestReceipt.recipientValue)
+    : fallbackMule
+      ? sanitizeBeneficiaryLabel(fallbackMule.label, fallbackMule.value, state.locale)
+      : "External Beneficiary";
+  const sanitizedSuggestedMules = preset.suggestedMules.map((mule) => ({
+    ...mule,
+    label: sanitizeBeneficiaryLabel(mule.label, mule.value, state.locale),
+  }));
+  const isStoppedRevealed = hasRevealed && state.mode === "mirage";
+  const isLockView = showLockPush || screen === "lock";
+  const showBottomTabs = !isLockView && (screen === "home" || screen === "chat");
+  const callDuration = formatDuration(callSeconds);
+
   return (
-    <div className="flex h-full min-h-[640px] flex-col bg-white text-slate-900">
-      {state.call.active && (
-        <div
-          className={`flex items-center justify-between px-4 py-2 text-xs font-medium text-white ${
-            isScreenSharing ? "bg-indigo-600" : "bg-emerald-600"
-          }`}
-        >
-          <span className="flex items-center gap-1.5">
-            {isScreenSharing ? (
-              <MonitorUp className="h-3.5 w-3.5 animate-pulse" />
-            ) : (
-              <PhoneCall className="h-3.5 w-3.5 animate-pulse" />
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        className={`flex h-[54px] flex-none items-center justify-between px-[30px] pt-1.5 text-[15px] font-semibold ${
+          isLockView ? "absolute inset-x-0 top-0 z-10 text-white" : "text-[var(--foreground)]"
+        }`}
+      >
+        <span>9:41</span>
+        <span className="flex items-center gap-[5px]" aria-hidden="true">
+          <span
+            className="inline-block h-[11px] w-[17px] rounded-[2px] bg-current"
+            style={{ clipPath: "polygon(0 100%, 100% 0, 100% 100%)" }}
+          />
+          <span className="inline-block h-[11px] w-[24px] rounded-[3px] bg-current" />
+        </span>
+      </div>
+
+      {isLockView ? (
+        <WalletLock
+          locale={state.locale}
+          showPush={showLockPush}
+          stoppedAmount={stoppedAmount}
+          currency={preset.currency}
+          trustedAlertSent={state.trustedAlertSent}
+          onUnlockIdle={() => setScreen("home")}
+          onOpenPush={handleOpenPush}
+        />
+      ) : (
+        <>
+          {state.call.active && (
+            <div className="mx-3.5 mt-0.5 flex h-[30px] flex-none items-center gap-2 rounded-full bg-[var(--call-green)] px-3 text-[12px] font-semibold text-white">
+              <button
+                type="button"
+                onClick={() => setActiveSheet("call")}
+                aria-label="Call options"
+                className="flex h-full min-w-0 items-center gap-1.5 text-left text-white"
+              >
+                <span className="animate-mirage-blink h-[7px] w-[7px] flex-none rounded-full bg-white" />
+                <span className="truncate">{state.call.callerNumber}</span>
+                <span className="mono font-medium opacity-95">{callDuration}</span>
+                <span className="text-[10px] opacity-85">▾</span>
+              </button>
+
+              {isScreenSharing ? (
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void handleToggleSharing()}
+                  className="ml-auto flex flex-none items-center gap-1.5 rounded-full bg-black/25 px-2.5 py-0.5 text-[11px] font-bold text-white transition hover:bg-black/35"
+                >
+                  <span className="h-[6px] w-[6px] rounded-full bg-[var(--destructive)]" />
+                  {copy.stopSharing}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void handleToggleSharing()}
+                  className="ml-auto flex-none rounded-full bg-white/22 px-2.5 py-0.5 text-[11px] font-bold text-white transition hover:bg-white/30"
+                >
+                  {copy.shareScreen}
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-4">
+            {screen === "home" && (
+              <WalletHome
+                locale={state.locale}
+                accounts={displayedAccounts}
+                selectedAccountId={selectedAccountId}
+                receipts={state.receipts}
+                isScreenSharing={isScreenSharing}
+                isStoppedRevealed={isStoppedRevealed}
+                recipientDisplayName={recipientDisplayName}
+                onSelectAccount={(id) => {
+                  setSelectedAccountId(id);
+                  setFromAccountId(id);
+                }}
+                onOpenDetails={() => {
+                  if (!isScreenSharing) {
+                    setActiveSheet("details");
+                  }
+                }}
+                onOpenSend={() => setScreen("send")}
+                onOpenStatements={() => setScreen("statements")}
+                onOpenReceipt={(receipt) => {
+                  setSelectedReceipt(receipt);
+                  setScreen("complete");
+                }}
+                onShowToast={showToast}
+              />
             )}
-            {isScreenSharing ? copy.screenShareBanner : copy.activeCallBanner} ·{" "}
-            {state.call.callerNumber}
-          </span>
-          <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] tracking-wide uppercase">
-            {isScreenSharing ? "LIVE" : "HD"}
-          </span>
-        </div>
+
+            {screen === "send" && (
+              <WalletSend
+                locale={state.locale}
+                accounts={displayedAccounts}
+                fromAccountId={fromAccountId}
+                recipientValue={recipientValue}
+                recipientLabel={recipientLabel}
+                amountInput={amountInput}
+                suggestedMules={preset.suggestedMules}
+                highlightBackupMule={highlightBackupMule}
+                isScreenSharing={isScreenSharing}
+                onBack={() => setScreen("home")}
+                onCycleFromAccount={handleCycleFromAccount}
+                onOpenRecipientPicker={() => setActiveSheet("recipient_picker")}
+                onSelectSuggestedMule={handleSelectSuggestedMule}
+                onKeypadInput={handleKeypadInput}
+                onOpenReview={() => setScreen("review")}
+              />
+            )}
+
+            {screen === "review" && fromAccount && (
+              <WalletReview
+                locale={state.locale}
+                fromAccount={fromAccount}
+                recipientValue={recipientValue}
+                recipientLabel={recipientLabel}
+                amount={Number(amountInput) || 0}
+                isScreenSharing={isScreenSharing}
+                isSubmitting={isSubmittingTransfer}
+                onBack={() => setScreen("send")}
+                onConfirm={() => void handleConfirmTransfer()}
+              />
+            )}
+
+            {screen === "complete" && latestReceipt && (
+              <WalletReceipt
+                locale={state.locale}
+                receipt={latestReceipt}
+                recipientDisplay={recipientDisplayName(latestReceipt.recipientValue)}
+                shownBalance={fromAccount?.balance ?? activeAccount?.balance ?? 0}
+                currency={latestReceipt.currency}
+                isStoppedRevealed={isStoppedRevealed}
+                onSeeWhatHappened={() => setScreen("happened")}
+                onDone={() => {
+                  setRecipientValue("");
+                  setRecipientLabel("");
+                  setAmountInput("");
+                  setScreen("home");
+                }}
+              />
+            )}
+
+            {screen === "happened" && (
+              <WalletHappened
+                locale={state.locale}
+                callerQuote={latestCallerLine}
+                amount={stoppedAmount}
+                currency={preset.currency}
+                recipientDisplay={stoppedRecipient}
+                capturedMulesCount={state.capturedMules.length}
+                isBlocked={isCallerBlocked}
+                onBlockNumber={handleBlockCaller}
+                onAskReal={() => setActiveSheet("ask_real")}
+                onBackToAccount={() => setScreen("home")}
+              />
+            )}
+
+            {(screen === "statements" || screen === "statement") && (
+              <WalletStatements
+                locale={state.locale}
+                isScreenSharing={isScreenSharing}
+                view={screen === "statement" ? "detail" : "list"}
+                onBack={() => setScreen(screen === "statement" ? "statements" : "home")}
+                onOpenOctober={() => setScreen("statement")}
+              />
+            )}
+
+            {screen === "chat" && (
+              <WalletSupportChat
+                locale={state.locale}
+                messages={state.supportMessages}
+                isBusy={isBusy}
+                onBack={() => setScreen("home")}
+                onSendMessage={onSendSupport}
+              />
+            )}
+          </div>
+
+          {showBottomTabs && (
+            <nav className="flex h-[62px] flex-none items-center justify-around bg-[var(--background)] px-2 pb-1.5 text-[10.5px] font-semibold">
+              <button
+                type="button"
+                onClick={() => setScreen("home")}
+                className={`flex flex-col items-center gap-1 transition ${
+                  screen === "home"
+                    ? "text-[var(--primary)]"
+                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                }`}
+              >
+                <Home className="h-[20px] w-[20px]" />
+                <span>{copy.tabMain}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setScreen("send")}
+                className="flex flex-col items-center gap-1 text-[var(--muted-foreground)] transition hover:text-[var(--foreground)]"
+              >
+                <ArrowLeftRight className="h-[20px] w-[20px]" />
+                <span>{copy.tabPayments}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (isScreenSharing) {
+                    showToast(copy.toastCardHidden);
+                  } else {
+                    setActiveSheet("details");
+                  }
+                }}
+                className="flex flex-col items-center gap-1 text-[var(--muted-foreground)] transition hover:text-[var(--foreground)]"
+              >
+                <CreditCard className="h-[20px] w-[20px]" />
+                <span>{copy.tabCards}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setScreen("chat")}
+                className={`flex flex-col items-center gap-1 transition ${
+                  screen === "chat"
+                    ? "text-[var(--primary)]"
+                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                }`}
+              >
+                <MessageSquare className="h-[20px] w-[20px]" />
+                <span>{copy.tabChat}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setScreen("statements")}
+                className="flex flex-col items-center gap-1 text-[var(--muted-foreground)] transition hover:text-[var(--foreground)]"
+              >
+                <LayoutGrid className="h-[20px] w-[20px]" />
+                <span>{copy.tabMore}</span>
+              </button>
+            </nav>
+          )}
+        </>
       )}
 
-      <header className="border-b border-slate-100 bg-gradient-to-br from-sky-600 to-indigo-700 px-5 py-5 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-lg font-semibold tracking-tight">{preset.brandName}</p>
-            <p className="text-xs text-sky-100">{preset.walletSubtitle[state.locale]}</p>
-          </div>
-          <span className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-medium">
-            {primaryCurrency}
-          </span>
+      {activeAccount && (
+        <WalletSheets
+          key={`${activeSheet ?? "none"}-${recipientValue}`}
+          locale={state.locale}
+          activeSheet={activeSheet}
+          callerNumber={state.call.callerNumber}
+          callDuration={callDuration}
+          activeAccount={activeAccount}
+          isScreenSharing={isScreenSharing}
+          cb412Error={cb412Error}
+          stoppedAmount={stoppedAmount}
+          stoppedRecipient={stoppedRecipient}
+          trustedAlertSent={state.trustedAlertSent}
+          suggestedMules={sanitizedSuggestedMules}
+          currentRecipientValue={recipientValue}
+          currentRecipientLabel={recipientLabel}
+          onClose={() => setActiveSheet(null)}
+          onEndCall={() => void handleEndCallFromSheet()}
+          onUseAlternateIban={handleUseAlternateIban}
+          onViewAccountAfterReveal={() => {
+            setActiveSheet(null);
+            setScreen("home");
+          }}
+          onSeeWhatHappened={() => {
+            setActiveSheet(null);
+            setScreen("happened");
+          }}
+          onRequestManualReview={() => {
+            setActiveSheet(null);
+            showToast(copy.manualReviewToast);
+          }}
+          onApplyRecipient={(value, label, suggestedAmount) => {
+            setRecipientValue(value);
+            setRecipientLabel(label);
+            if (suggestedAmount && !amountInput) {
+              setAmountInput(String(suggestedAmount));
+            }
+            markClipboardPaste();
+          }}
+          onPasteRecipient={markClipboardPaste}
+        />
+      )}
+
+      {toastText && !showLockPush && (
+        <div className="animate-mirage-fade pointer-events-none absolute top-[90px] left-1/2 z-50 -translate-x-1/2 rounded-full bg-[var(--secondary)] px-4 py-2 text-[13px] font-semibold whitespace-nowrap text-[var(--foreground)] shadow-[var(--shadow-sm)]">
+          {toastText}
         </div>
-
-        <div className="mt-5">
-          <p className="text-xs text-sky-100/90">{copy.totalBalance}</p>
-          <p className="mt-0.5 text-3xl font-bold tracking-tight tabular-nums">
-            {formatMoney(totalBalance, primaryCurrency)}
-          </p>
-        </div>
-      </header>
-
-      <main className="flex-1 overflow-y-auto px-4 py-4">
-        {tab === "home" && (
-          <div className="space-y-4">
-            <div className="space-y-2.5">
-              {visibleAccounts.map((account) => (
-                <div
-                  key={account.id}
-                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
-                      {account.kind === "vault" ? (
-                        <Landmark className="h-5 w-5" />
-                      ) : (
-                        <Wallet className="h-5 w-5" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{account.name}</p>
-                      <p className="text-xs text-slate-500">
-                        {account.kind === "vault" ? copy.vaultLabel : copy.checkingLabel}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-bold text-slate-900 tabular-nums">
-                    {formatMoney(account.balance, account.currency)}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setTab("transfer")}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-700"
-            >
-              <ArrowUpRight className="h-4 w-4" />
-              {copy.walletTabTransfer}
-            </button>
-
-            <section className="pt-1">
-              <h3 className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                {copy.recentReceipts}
-              </h3>
-              {state.receipts.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-400">
-                  {copy.noReceiptsYet}
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {state.receipts.map((receipt) => (
-                    <div
-                      key={`${receipt.refCode}-${receipt.createdAt}`}
-                      className="rounded-xl border border-slate-200 bg-white p-3 text-xs"
-                    >
-                      <div className="flex items-center justify-between font-semibold text-slate-900">
-                        <span>{receipt.refCode}</span>
-                        <span className="tabular-nums">
-                          -{formatMoney(receipt.amount, receipt.currency)}
-                        </span>
-                      </div>
-                      <p className="mt-1 truncate font-mono text-[11px] text-slate-500">
-                        {receipt.recipientValue}
-                      </p>
-                      <p className="mt-1 text-[11px] text-emerald-700">{receipt.statusLabel}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        )}
-
-        {tab === "transfer" && (
-          <div className="space-y-4">
-            <form onSubmit={handleTransferSubmit} className="space-y-3.5">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-600">
-                  {copy.fromAccount}
-                </label>
-                <select
-                  value={fromAccountId}
-                  onChange={(e) => setFromAccountId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 focus:border-sky-500 focus:outline-none"
-                >
-                  {visibleAccounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.name} ({formatMoney(acc.balance, acc.currency)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-600">
-                  {copy.recipientLabel}
-                </label>
-                <input
-                  type="text"
-                  value={recipientValue}
-                  onChange={(e) => setRecipientValue(e.target.value)}
-                  onPaste={handleRecipientPaste}
-                  placeholder={copy.recipientPlaceholder}
-                  required
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs text-slate-900 focus:border-sky-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-600">
-                  {copy.amountLabel} ({primaryCurrency})
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  step="any"
-                  value={amountInput}
-                  onChange={(e) => setAmountInput(e.target.value)}
-                  required
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 tabular-nums focus:border-sky-500 focus:outline-none"
-                />
-              </div>
-
-              {preset.suggestedMules.length > 0 && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-                  <p className="mb-1.5 text-[11px] font-medium text-slate-500">
-                    {copy.quickFillLabel}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {preset.suggestedMules.map((mule) => (
-                      <button
-                        key={mule.value}
-                        type="button"
-                        onClick={() => {
-                          setRecipientValue(mule.value);
-                          setRecipientLabel(mule.label);
-                          setAmountInput(String(mule.suggestedAmount));
-                          handleRecipientPaste();
-                        }}
-                        className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-sky-400 hover:text-sky-700"
-                      >
-                        {mule.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isBusy}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:opacity-50"
-              >
-                <ArrowUpRight className="h-4 w-4" />
-                {copy.sendTransfer}
-              </button>
-            </form>
-
-            {transferError && (
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex gap-2.5 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900"
-              >
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                <p>{transferError}</p>
-              </motion.div>
-            )}
-
-            {latestReceipt && (
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-950"
-              >
-                <div className="flex items-center gap-2 font-semibold text-emerald-800">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>{latestReceipt.statusLabel}</span>
-                </div>
-                <div className="mt-2 space-y-1">
-                  <p className="font-mono text-sm font-bold text-slate-900">
-                    {latestReceipt.refCode}
-                  </p>
-                  <p className="tabular-nums">
-                    {formatMoney(latestReceipt.amount, latestReceipt.currency)}
-                  </p>
-                  <p className="truncate font-mono text-[11px] text-slate-600">
-                    {latestReceipt.recipientValue}
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </div>
-        )}
-
-        {tab === "support" && (
-          <div className="flex h-full flex-col">
-            <div className="flex-1 space-y-2.5 overflow-y-auto pb-3">
-              {state.supportMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={
-                    msg.role === "user"
-                      ? "ml-8 rounded-2xl rounded-br-sm bg-sky-600 px-3.5 py-2.5 text-xs text-white"
-                      : "mr-6 rounded-2xl rounded-bl-sm bg-slate-100 px-3.5 py-2.5 text-xs text-slate-800"
-                  }
-                >
-                  {msg.text}
-                </div>
-              ))}
-            </div>
-
-            <form onSubmit={handleSupportSubmit} className="mt-auto flex gap-2 pt-2">
-              <input
-                type="text"
-                value={supportDraft}
-                onChange={(e) => setSupportDraft(e.target.value)}
-                placeholder={copy.supportPlaceholder}
-                className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:border-sky-500 focus:outline-none"
-              />
-              <button
-                type="submit"
-                disabled={isBusy}
-                className="flex items-center gap-1 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:opacity-50"
-              >
-                <Send className="h-3.5 w-3.5" />
-                {copy.sendMessage}
-              </button>
-            </form>
-          </div>
-        )}
-      </main>
-
-      <nav className="grid grid-cols-3 border-t border-slate-200 bg-slate-50 px-2 py-2">
-        <button
-          type="button"
-          onClick={() => setTab("home")}
-          className={`flex flex-col items-center gap-1 rounded-lg py-1.5 text-[11px] font-medium transition ${
-            tab === "home" ? "text-sky-600" : "text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <Wallet className="h-4 w-4" />
-          {copy.walletTabHome}
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("transfer")}
-          className={`flex flex-col items-center gap-1 rounded-lg py-1.5 text-[11px] font-medium transition ${
-            tab === "transfer" ? "text-sky-600" : "text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <ArrowUpRight className="h-4 w-4" />
-          {copy.walletTabTransfer}
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("support")}
-          className={`flex flex-col items-center gap-1 rounded-lg py-1.5 text-[11px] font-medium transition ${
-            tab === "support" ? "text-sky-600" : "text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <MessageSquare className="h-4 w-4" />
-          {copy.walletTabSupport}
-        </button>
-      </nav>
+      )}
     </div>
   );
 }

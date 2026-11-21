@@ -6,9 +6,17 @@ export type PhoneFrameProps = {
 
 export function PhoneFrame({ children }: PhoneFrameProps) {
   return (
-    <div className="mx-auto w-full max-w-[390px] rounded-[2.75rem] border-[6px] border-slate-800 bg-slate-900 p-2 shadow-2xl shadow-black/60">
-      <div className="mx-auto mb-2 h-5 w-28 rounded-full bg-slate-950" />
-      <div className="h-[680px] overflow-hidden rounded-[2rem] bg-white">{children}</div>
-    </div>
+    <section
+      aria-label="Customer mobile phone"
+      className="relative h-[780px] w-[420px] flex-none rounded-[58px] bg-[#1b1b1f] p-[12px] shadow-[var(--shadow-2xl)]"
+    >
+      <div className="dark relative flex h-full w-full flex-col overflow-hidden rounded-[47px] bg-black text-[var(--foreground)]">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute top-[11px] left-1/2 z-20 h-[32px] w-[112px] -translate-x-1/2 rounded-[20px] bg-black shadow-[0_0_0_1.5px_var(--secondary)]"
+        />
+        {children}
+      </div>
+    </section>
   );
 }
