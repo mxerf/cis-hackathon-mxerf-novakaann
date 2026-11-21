@@ -15,22 +15,34 @@ import {
   submitTransfer,
   updateDetectionSignals,
 } from "./mirage.core.ts";
-import { getPresetById } from "./mirage.presets.ts";
+import { ORDERED_PRESETS, getPresetById } from "./mirage.presets.ts";
 import type {
   IngestTranscriptSchemaInput,
   NextChunkSchemaInput,
+  ResetSessionSchemaInput,
   SendSupportSchemaInput,
   SetLocaleSchemaInput,
   StartCallSchemaInput,
   SubmitTransferSchemaInput,
   UpdateSignalsSchemaInput,
 } from "./mirage.schemas.ts";
+import type { PresetSummary } from "./mirage.types.ts";
 
 export const PRE_TRANSFER_AI_WAIT_MS = 3500;
 const DOUBLE_TAP_DEDUP_WINDOW_MS = 2500;
 
 export function snapshot({ ctx }: PublicResolverOptions) {
   return ctx.store.getSnapshot();
+}
+
+export function listPresets(): PresetSummary[] {
+  return ORDERED_PRESETS.map((preset) => ({
+    id: preset.id,
+    shortLabel: preset.shortLabel,
+    category: preset.category,
+    summary: preset.summary,
+    scenarioTitle: preset.scenarioTitle,
+  }));
 }
 
 export function startCallSession({
@@ -80,6 +92,7 @@ export async function ingestCallTranscript({
     text,
     coercionScoreDelta: input.coercionScoreDelta ?? 0,
     flaggedTactics: input.flaggedTactics ?? [],
+    enableScreenShare: input.enableScreenShare,
   });
 
   const savedPhase1 = ctx.store.setState(phase1);
@@ -317,9 +330,13 @@ export function changeLocale({
   return ctx.store.setState(next);
 }
 
-export function resetDemoSession({ ctx }: PublicResolverOptions) {
+export function resetDemoSession({
+  ctx,
+  input,
+}: PublicResolverOptions & { input?: ResetSessionSchemaInput }) {
   const current = ctx.store.getState();
-  const preset = getPresetById(current.presetId);
+  const targetPresetId = input?.presetId ?? current.presetId;
+  const preset = getPresetById(targetPresetId);
   const next = resetState(preset, current.locale);
   return ctx.store.setState(next);
 }

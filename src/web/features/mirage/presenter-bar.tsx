@@ -1,108 +1,137 @@
-import { ExternalLink } from "lucide-react";
-import type { Locale, MirageState, ScenarioPreset } from "../../../shared/mirage-types.ts";
+import { ExternalLink, PhoneCall, PhoneOff, RotateCcw } from "lucide-react";
+import type {
+  Locale,
+  MirageState,
+  PresetSummary,
+  ScenarioPreset,
+} from "../../../shared/mirage-types.ts";
 import { getUiCopy } from "../../lib/ui-copy.ts";
 
 export type PresenterBarProps = {
   state: MirageState;
   preset: ScenarioPreset;
+  presets: PresetSummary[];
   isConnected: boolean;
   isBusy: boolean;
-  isStartingDemo: boolean;
   useLiveAi: boolean;
   callerVoice: boolean;
-  onStartDemo: () => void;
-  onPlayNextChunk: () => void;
+  onSelectPreset: (presetId: string) => void;
+  onStartCall: () => void;
   onEndCall: () => void;
-  onToggleSharing: () => void;
   onReset: () => void;
   onToggleLiveAi: (enabled: boolean) => void;
   onToggleCallerVoice: (enabled: boolean) => void;
   onSwitchLocale: (locale: Locale) => void;
 };
 
+function getPresetDotClass(item: PresetSummary): string {
+  if (item.category === "safe") {
+    return "bg-[var(--call-green)]";
+  }
+  if (item.id === "bank-refund-trap") {
+    return "bg-[var(--destructive)]";
+  }
+  return "bg-[var(--primary)]";
+}
+
 export function PresenterBar({
   state,
   preset,
+  presets,
   isConnected,
   isBusy,
-  isStartingDemo,
   useLiveAi,
   callerVoice,
-  onStartDemo,
-  onPlayNextChunk,
+  onSelectPreset,
+  onStartCall,
   onEndCall,
-  onToggleSharing,
   onReset,
   onToggleLiveAi,
   onToggleCallerVoice,
   onSwitchLocale,
 }: PresenterBarProps) {
   const copy = getUiCopy(state.locale);
-  const isScreenSharing = state.call.detection.signals.screenSharing;
-  const totalChunks = preset.scriptedChunks.length;
-  const playedChunks = state.scriptedChunkIndex;
-  const isLive =
-    state.call.active ||
-    state.call.transcript.length > 0 ||
-    state.receipts.length > 0 ||
-    Boolean(state.call.endedAt);
-  const canPlayNext = isLive && playedChunks < totalChunks && !isBusy && !isStartingDemo;
-  const canToggleShare = (state.call.active || isScreenSharing) && !isBusy;
+  const effectivePresets: PresetSummary[] =
+    presets.length > 0
+      ? presets
+      : [
+          {
+            id: preset.id,
+            shortLabel: preset.shortLabel,
+            category: preset.category,
+            summary: preset.summary,
+            scenarioTitle: preset.scenarioTitle,
+          },
+        ];
 
   return (
     <header className="flex h-[56px] w-full flex-none items-center gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--card)] px-4">
-      <span className="mr-1 text-[11px] font-semibold tracking-[0.14em] whitespace-nowrap text-[var(--muted-foreground)] uppercase">
-        {copy.presenterTag}
+      <span className="text-[11px] font-semibold tracking-[0.14em] whitespace-nowrap text-[var(--muted-foreground)] uppercase">
+        {copy.caseTag}
       </span>
 
-      <button
-        type="button"
-        disabled={isLive || isStartingDemo || isBusy}
-        onClick={onStartDemo}
-        className="h-[34px] rounded-[var(--radius-sm)] border border-[var(--primary)] bg-[var(--primary)] px-3.5 text-[13px] font-semibold whitespace-nowrap text-[var(--primary-foreground)] transition hover:brightness-105 disabled:opacity-40"
+      <div
+        role="tablist"
+        aria-label="Demo scenario presets"
+        className="flex flex-none overflow-hidden rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--background)]/50"
       >
-        {isStartingDemo ? copy.startingDemo : copy.startDemo}
-      </button>
+        {effectivePresets.map((item) => {
+          const isSelected = item.id === preset.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={isSelected}
+              disabled={isBusy}
+              onClick={() => onSelectPreset(item.id)}
+              title={item.summary[state.locale]}
+              className={`inline-flex h-[32px] items-center gap-1.5 border-r border-[var(--border)] px-2.5 text-[12px] font-semibold whitespace-nowrap transition last:border-r-0 ${
+                isSelected
+                  ? "bg-[var(--secondary)] text-[var(--foreground)]"
+                  : "bg-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              <span className={`h-2 w-2 flex-none rounded-full ${getPresetDotClass(item)}`} />
+              {item.shortLabel[state.locale]}
+            </button>
+          );
+        })}
+      </div>
 
-      <button
-        type="button"
-        disabled={!canPlayNext}
-        onClick={onPlayNextChunk}
-        className="h-[34px] rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-3 text-[13px] font-semibold whitespace-nowrap text-[var(--foreground)] transition hover:bg-[var(--secondary)] disabled:opacity-40"
-      >
-        {playedChunks >= totalChunks
-          ? `${copy.allLinesPlayed} (${totalChunks}/${totalChunks})`
-          : `${copy.nextScamLine} (${playedChunks}/${totalChunks})`}
-      </button>
-
-      <button
-        type="button"
-        disabled={!state.call.active || isBusy}
-        onClick={onEndCall}
-        className="h-[34px] rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-3 text-[13px] font-semibold whitespace-nowrap text-[var(--foreground)] transition hover:bg-[var(--secondary)] disabled:opacity-40"
-      >
-        {copy.endCall}
-      </button>
-
-      <button
-        type="button"
-        disabled={!canToggleShare}
-        onClick={onToggleSharing}
-        className="h-[34px] rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-3 text-[13px] font-semibold whitespace-nowrap text-[var(--foreground)] transition hover:bg-[var(--secondary)] disabled:opacity-40"
-      >
-        {isScreenSharing ? copy.stopSharing : copy.shareScreen}
-      </button>
+      {state.call.active ? (
+        <button
+          type="button"
+          disabled={isBusy}
+          onClick={onEndCall}
+          className="inline-flex h-[34px] items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--destructive)] bg-[var(--destructive)] px-3 text-[12.5px] font-semibold whitespace-nowrap text-white transition hover:brightness-105 disabled:opacity-40"
+        >
+          <PhoneOff className="h-3.5 w-3.5" />
+          {copy.endCall}
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={isBusy}
+          onClick={onStartCall}
+          className="inline-flex h-[34px] items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--primary)] bg-[var(--primary)] px-3 text-[12.5px] font-semibold whitespace-nowrap text-[var(--primary-foreground)] transition hover:brightness-105 disabled:opacity-40"
+        >
+          <PhoneCall className="h-3.5 w-3.5" />
+          {copy.startCall}
+        </button>
+      )}
 
       <button
         type="button"
         disabled={isBusy}
         onClick={onReset}
-        className="h-[34px] rounded-[var(--radius-sm)] border border-[var(--border)] bg-transparent px-3 text-[13px] font-medium whitespace-nowrap text-[var(--secondary-foreground)] transition hover:bg-[var(--secondary)] disabled:opacity-40"
+        className="inline-flex h-[34px] items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-transparent px-2.5 text-[12.5px] font-medium whitespace-nowrap text-[var(--secondary-foreground)] transition hover:bg-[var(--secondary)] disabled:opacity-40"
       >
+        <RotateCcw className="h-3.5 w-3.5" />
         {copy.reset}
       </button>
 
-      <div className="ml-auto flex items-center gap-3 pl-2">
+      <div className="ml-auto flex items-center gap-2.5 pl-2">
         <label className="flex cursor-pointer items-center gap-1.5 text-[12px] font-medium whitespace-nowrap text-[var(--muted-foreground)] select-none">
           <input
             type="checkbox"
@@ -127,7 +156,7 @@ export function PresenterBar({
           <button
             type="button"
             onClick={() => onSwitchLocale("en")}
-            className={`h-[30px] px-2.5 text-[12px] font-semibold transition ${
+            className={`h-[30px] px-2 text-[11.5px] font-semibold transition ${
               state.locale === "en"
                 ? "bg-[var(--secondary)] text-[var(--foreground)]"
                 : "bg-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
@@ -138,7 +167,7 @@ export function PresenterBar({
           <button
             type="button"
             onClick={() => onSwitchLocale("ru")}
-            className={`h-[30px] px-2.5 text-[12px] font-semibold transition ${
+            className={`h-[30px] px-2 text-[11.5px] font-semibold transition ${
               state.locale === "ru"
                 ? "bg-[var(--secondary)] text-[var(--foreground)]"
                 : "bg-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
@@ -152,7 +181,7 @@ export function PresenterBar({
           href="/mobile"
           target="_blank"
           rel="noreferrer"
-          className="inline-flex h-[30px] items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-2.5 text-[12px] font-semibold whitespace-nowrap text-[var(--foreground)] transition hover:bg-[var(--secondary)]"
+          className="inline-flex h-[30px] items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-2 text-[11.5px] font-semibold whitespace-nowrap text-[var(--foreground)] transition hover:bg-[var(--secondary)]"
         >
           {copy.mobileLink}
           <ExternalLink className="h-3 w-3 text-[var(--muted-foreground)]" />

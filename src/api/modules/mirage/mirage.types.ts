@@ -18,6 +18,8 @@ export {
   type MirageState,
   type MuleArtifact,
   type MuleArtifactKind,
+  type PresetCategory,
+  type PresetSummary,
   type ScenarioPreset,
   type ScriptedTranscriptChunk,
   type SuggestedMule,

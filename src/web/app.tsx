@@ -1,14 +1,12 @@
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TranscriptSpeaker } from "../shared/mirage-types.ts";
+import type { ScriptedTranscriptChunk, TranscriptSpeaker } from "../shared/mirage-types.ts";
 import { MiragePanel } from "./features/mirage/mirage-panel.tsx";
 import { MobileWallet } from "./features/mirage/mobile-wallet.tsx";
 import { PhoneFrame } from "./features/mirage/phone-frame.tsx";
 import { PresenterBar } from "./features/mirage/presenter-bar.tsx";
 import { useMirageSync } from "./features/mirage/use-mirage-sync.ts";
 import { getUiCopy } from "./lib/ui-copy.ts";
-
-const INTRO_CHUNK_DELAY_MS = 1400;
 
 function computeStageScale(): number {
   return Math.max(
@@ -24,8 +22,10 @@ export function App() {
   const {
     state,
     preset,
+    presets,
     isConnected,
     isBusy,
+    isAiPending,
     startCall,
     endCall,
     updateSignals,
@@ -35,28 +35,17 @@ export function App() {
     sendSupportMessage,
     switchLocale,
     resetDemo,
+    selectPreset,
   } = useMirageSync();
 
   const [stageScale, setStageScale] = useState<number>(() => computeStageScale());
   const [useLiveAi, setUseLiveAi] = useState(true);
   const [callerVoice, setCallerVoice] = useState(false);
-  const [isStartingDemo, setIsStartingDemo] = useState(false);
   const [revealedSessionId, setRevealedSessionId] = useState<string | null>(null);
   const [blockedSessionId, setBlockedSessionId] = useState<string | null>(null);
 
-  const introTimerRef = useRef<number | null>(null);
-  const demoRunIdRef = useRef(0);
   const spokenIdsRef = useRef<Set<string>>(new Set());
   const lastSessionIdRef = useRef<string>("");
-
-  const cancelIntroSequence = useCallback(() => {
-    demoRunIdRef.current += 1;
-    if (introTimerRef.current !== null) {
-      window.clearTimeout(introTimerRef.current);
-      introTimerRef.current = null;
-    }
-    setIsStartingDemo(false);
-  }, []);
 
   useEffect(() => {
     function handleResize() {
@@ -68,9 +57,6 @@ export function App() {
 
   useEffect(() => {
     return () => {
-      if (introTimerRef.current !== null) {
-        window.clearTimeout(introTimerRef.current);
-      }
       if ("speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
@@ -111,67 +97,52 @@ export function App() {
     }
   }, []);
 
-  const handleStartDemo = useCallback(() => {
-    if (isStartingDemo) {
-      return;
-    }
-    cancelIntroSequence();
-    const runId = demoRunIdRef.current;
-    setIsStartingDemo(true);
-
-    void (async () => {
-      try {
-        await startCall();
-        if (demoRunIdRef.current !== runId) {
-          return;
-        }
-        await playNextChunk(useLiveAi);
-        if (demoRunIdRef.current !== runId) {
-          return;
-        }
-
-        introTimerRef.current = window.setTimeout(() => {
-          introTimerRef.current = null;
-          if (demoRunIdRef.current !== runId) {
-            return;
-          }
-          void playNextChunk(useLiveAi).finally(() => {
-            if (demoRunIdRef.current === runId) {
-              setIsStartingDemo(false);
-            }
-          });
-        }, INTRO_CHUNK_DELAY_MS);
-      } catch {
-        if (demoRunIdRef.current === runId) {
-          setIsStartingDemo(false);
-        }
-      }
-    })();
-  }, [cancelIntroSequence, isStartingDemo, playNextChunk, startCall, useLiveAi]);
-
   const handleEndCall = useCallback(async () => {
-    cancelIntroSequence();
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
     await endCall();
-  }, [cancelIntroSequence, endCall]);
+  }, [endCall]);
 
   const handleReset = useCallback(() => {
-    cancelIntroSequence();
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
     setRevealedSessionId(null);
     setBlockedSessionId(null);
     void resetDemo();
-  }, [cancelIntroSequence, resetDemo]);
+  }, [resetDemo]);
+
+  const handleSelectPreset = useCallback(
+    (presetId: string) => {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+      setRevealedSessionId(null);
+      setBlockedSessionId(null);
+      void selectPreset(presetId);
+    },
+    [selectPreset],
+  );
 
   const handleInjectTranscript = useCallback(
     async (speaker: TranscriptSpeaker, text: string) => {
       await injectTranscript(speaker, text, useLiveAi);
     },
     [injectTranscript, useLiveAi],
+  );
+
+  const handlePlayCue = useCallback(
+    async (chunk: ScriptedTranscriptChunk) => {
+      if (state && preset && preset.scriptedChunks[state.scriptedChunkIndex]?.id === chunk.id) {
+        await playNextChunk(useLiveAi);
+        return;
+      }
+      await injectTranscript(chunk.speaker, chunk.text, useLiveAi, {
+        enableScreenShare: chunk.autoEnableScreenShare,
+      });
+    },
+    [injectTranscript, playNextChunk, preset, state, useLiveAi],
   );
 
   if (!state || !preset) {
@@ -190,7 +161,6 @@ export function App() {
     );
   }
 
-  const isScreenSharing = state.call.detection.signals.screenSharing;
   const isRevealed = revealedSessionId === state.sessionId;
   const isCallerBlocked = blockedSessionId === state.sessionId;
 
@@ -219,15 +189,14 @@ export function App() {
       <PresenterBar
         state={state}
         preset={preset}
+        presets={presets}
         isConnected={isConnected}
         isBusy={isBusy}
-        isStartingDemo={isStartingDemo}
         useLiveAi={useLiveAi}
         callerVoice={callerVoice}
-        onStartDemo={handleStartDemo}
-        onPlayNextChunk={() => void playNextChunk(useLiveAi)}
+        onSelectPreset={handleSelectPreset}
+        onStartCall={() => void startCall()}
         onEndCall={() => void handleEndCall()}
-        onToggleSharing={() => void updateSignals({ screenSharing: !isScreenSharing })}
         onReset={handleReset}
         onToggleLiveAi={setUseLiveAi}
         onToggleCallerVoice={handleToggleCallerVoice}
@@ -243,8 +212,14 @@ export function App() {
             state={state}
             preset={preset}
             isBusy={isBusy}
+            isAiPending={isAiPending}
             isRevealed={isRevealed}
             isCallerBlocked={isCallerBlocked}
+            onStartCall={startCall}
+            onEndCall={handleEndCall}
+            onUpdateSignals={updateSignals}
+            onPlayNextChunk={() => playNextChunk(useLiveAi)}
+            onPlayCue={handlePlayCue}
             onInjectTranscript={handleInjectTranscript}
           />
 
@@ -254,6 +229,7 @@ export function App() {
               state={state}
               preset={preset}
               isBusy={isBusy}
+              startUnlocked
               onEndCall={handleEndCall}
               onUpdateSignals={updateSignals}
               onSubmitTransfer={submitTransfer}

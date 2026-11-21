@@ -59,6 +59,14 @@ const NEUTRAL_BENEFICIARY_BY_IBAN: Record<string, { en: string; ru: string }> = 
     en: "Reserve Clearing Account",
     ru: "Резервный клиринговый счёт",
   },
+  AE190260001015884422110: {
+    en: "Partner Holding Reference",
+    ru: "Партнёрский счёт #1",
+  },
+  AE830330000019283746501: {
+    en: "Partner Settlement Account",
+    ru: "Резервный счёт партнёра",
+  },
 };
 
 function sanitizeBeneficiaryLabel(rawLabel: string, rawValue: string, locale: "en" | "ru"): string {
@@ -83,7 +91,7 @@ export function MobileWallet({
   state,
   preset,
   isBusy,
-  startUnlocked = false,
+  startUnlocked = true,
   onEndCall,
   onUpdateSignals,
   onSubmitTransfer,
@@ -251,7 +259,9 @@ export function MobileWallet({
     setRecipientLabel(sanitizeBeneficiaryLabel(mule.label, mule.value, state.locale));
     setAmountInput(String(mule.suggestedAmount));
     setHighlightBackupMule(false);
-    markClipboardPaste();
+    if (preset.category !== "safe") {
+      markClipboardPaste();
+    }
   }
 
   function handleCycleFromAccount() {
@@ -652,7 +662,9 @@ export function MobileWallet({
             if (suggestedAmount && !amountInput) {
               setAmountInput(String(suggestedAmount));
             }
-            markClipboardPaste();
+            if (preset.category !== "safe") {
+              markClipboardPaste();
+            }
           }}
           onPasteRecipient={markClipboardPaste}
         />

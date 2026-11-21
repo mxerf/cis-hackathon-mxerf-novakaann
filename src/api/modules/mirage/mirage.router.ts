@@ -5,6 +5,7 @@ import {
   endCallSession,
   executeTransfer,
   ingestCallTranscript,
+  listPresets,
   patchDetectionSignals,
   resetDemoSession,
   sendSupport,
@@ -14,6 +15,7 @@ import {
 import {
   ingestTranscriptSchema,
   nextChunkSchema,
+  resetSessionSchema,
   sendSupportSchema,
   setLocaleSchema,
   startCallSchema,
@@ -23,6 +25,7 @@ import {
 
 export const mirageRouter = router({
   snapshot: publicProcedure.query(snapshot),
+  presets: publicProcedure.query(listPresets),
   startCall: publicProcedure.input(startCallSchema).mutation(startCallSession),
   endCall: publicProcedure.mutation(endCallSession),
   updateSignals: publicProcedure.input(updateSignalsSchema).mutation(patchDetectionSignals),
@@ -31,5 +34,5 @@ export const mirageRouter = router({
   submitTransfer: publicProcedure.input(submitTransferSchema).mutation(executeTransfer),
   sendSupport: publicProcedure.input(sendSupportSchema).mutation(sendSupport),
   setLocale: publicProcedure.input(setLocaleSchema).mutation(changeLocale),
-  reset: publicProcedure.mutation(resetDemoSession),
+  reset: publicProcedure.input(resetSessionSchema).mutation(resetDemoSession),
 });

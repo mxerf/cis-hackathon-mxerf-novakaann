@@ -21,6 +21,7 @@ export const ingestTranscriptSchema = z.object({
   waitForAi: z.boolean().optional().default(false),
   coercionScoreDelta: z.number().min(0).max(100).optional(),
   flaggedTactics: z.array(z.string().min(1)).optional(),
+  enableScreenShare: z.boolean().optional(),
 });
 
 export const nextChunkSchema = z
@@ -45,6 +46,12 @@ export const setLocaleSchema = z.object({
   locale: z.enum(["en", "ru"]),
 });
 
+export const resetSessionSchema = z
+  .object({
+    presetId: z.string().min(1).optional(),
+  })
+  .optional();
+
 export type StartCallSchemaInput = z.infer<typeof startCallSchema>;
 export type UpdateSignalsSchemaInput = z.infer<typeof updateSignalsSchema>;
 export type IngestTranscriptSchemaInput = z.infer<typeof ingestTranscriptSchema>;
@@ -52,3 +59,4 @@ export type NextChunkSchemaInput = z.infer<typeof nextChunkSchema>;
 export type SubmitTransferSchemaInput = z.infer<typeof submitTransferSchema>;
 export type SendSupportSchemaInput = z.infer<typeof sendSupportSchema>;
 export type SetLocaleSchemaInput = z.infer<typeof setLocaleSchema>;
+export type ResetSessionSchemaInput = z.infer<typeof resetSessionSchema>;

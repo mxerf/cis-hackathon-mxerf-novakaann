@@ -124,7 +124,7 @@ export function WalletSend({
                 key={mule.value}
                 type="button"
                 onClick={() => onSelectSuggestedMule(mule)}
-                className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
+                className={`rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition ${
                   isBackupHighlighted
                     ? "border border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_22%,var(--card))] text-[var(--foreground)] shadow-[var(--shadow-xs)]"
                     : isSelected
@@ -132,8 +132,10 @@ export function WalletSend({
                       : "border border-transparent bg-[var(--card)] text-[var(--secondary-foreground)] hover:border-[var(--border)]"
                 }`}
               >
-                {idx === 0 ? copy.fillIban1 : copy.fillIban2}{" "}
-                <span className="mono text-[11px] opacity-80">({shortIban(mule.value)})</span>
+                {mule.label}{" "}
+                <span className="mono text-[10.5px] opacity-80">
+                  · {formatNumber(mule.suggestedAmount, 0)} {currency}
+                </span>
               </button>
             );
           })}

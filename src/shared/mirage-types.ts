@@ -135,8 +135,21 @@ export type LocalizedText = {
   ru: string;
 };
 
+export type PresetCategory = "scam" | "safe";
+
+export type PresetSummary = {
+  id: string;
+  shortLabel: LocalizedText;
+  category: PresetCategory;
+  summary: LocalizedText;
+  scenarioTitle: LocalizedText;
+};
+
 export type ScenarioPreset = {
   id: string;
+  shortLabel: LocalizedText;
+  category: PresetCategory;
+  summary: LocalizedText;
   brandName: string;
   walletSubtitle: LocalizedText;
   telecomCarrier: string;
@@ -149,6 +162,7 @@ export type ScenarioPreset = {
     callerNumber: string;
     callerLabel: string;
     simAgeDays: number;
+    unverifiedCaller?: boolean;
   };
   scriptedChunks: ScriptedTranscriptChunk[];
   suggestedMules: SuggestedMule[];

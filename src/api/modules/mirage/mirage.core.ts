@@ -156,7 +156,7 @@ export function createInitialState(
 
   const initialSignals: DetectionSignals = {
     screenSharing: false,
-    unverifiedCaller: true,
+    unverifiedCaller: preset.defaultCall.unverifiedCaller ?? true,
     clipboardPasteDetected: false,
   };
 

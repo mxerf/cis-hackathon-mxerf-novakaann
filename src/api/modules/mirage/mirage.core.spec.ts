@@ -16,7 +16,12 @@ import {
   submitTransfer,
   updateDetectionSignals,
 } from "./mirage.core.ts";
-import { BANK_REFUND_TRAP_PRESET, UAE_DU_KYC_PRESET } from "./mirage.presets.ts";
+import {
+  BANK_REFUND_TRAP_PRESET,
+  LEGIT_CONTROL_PRESET,
+  STEALTH_EUPHEMISM_PRESET,
+  UAE_DU_KYC_PRESET,
+} from "./mirage.presets.ts";
 
 describe("Mirage coercion shield core", () => {
   test("normal mode transfer deducts from realAccounts and issues receipt", () => {
@@ -408,5 +413,71 @@ describe("Mirage coercion shield core", () => {
       "FLAG:VAULT_WITHDRAWAL_ON_CALL",
     );
     expect(res.state.realAccounts[1]?.balance).toBe(140000);
+  });
+
+  test("legit-control-call keeps risk low, never triggers Mirage, and settles real 500 AED transfer", () => {
+    let state = createInitialState(LEGIT_CONTROL_PRESET, "en", "2026-11-21T10:00:00.000Z");
+    expect(state.call.detection.signals.unverifiedCaller).toBe(false);
+
+    state = advanceScriptedChunk(state, LEGIT_CONTROL_PRESET, "2026-11-21T10:00:10.000Z");
+    state = advanceScriptedChunk(state, LEGIT_CONTROL_PRESET, "2026-11-21T10:00:20.000Z");
+    state = advanceScriptedChunk(state, LEGIT_CONTROL_PRESET, "2026-11-21T10:00:30.000Z");
+
+    expect(state.mode).toBe("normal");
+    expect(state.call.detection.algorithm.score).toBe(0);
+    expect(state.call.detection.combinedScore).toBeLessThan(20);
+
+    const transfer = submitTransfer(
+      state,
+      {
+        fromAccountId: "acc-checking",
+        recipientValue: "AE290331000044118822901",
+        recipientLabel: "Nadia Al-Mansoori",
+        amount: 500,
+        now: "2026-11-21T10:00:40.000Z",
+      },
+      LEGIT_CONTROL_PRESET,
+    );
+
+    expect(transfer.outcome).toBe("completed");
+    expect(transfer.state.mode).toBe("normal");
+    expect(transfer.state.realAccounts[0]?.balance).toBe(24000);
+    expect(transfer.state.capturedMules).toHaveLength(0);
+  });
+
+  test("stealth-euphemism-scam keeps Algorithm Level below 30% until AI Semantic engages Mirage", () => {
+    let state = startCall(createInitialState(STEALTH_EUPHEMISM_PRESET, "en"));
+    const chunk1 = STEALTH_EUPHEMISM_PRESET.scriptedChunks[0];
+    const chunk3 = STEALTH_EUPHEMISM_PRESET.scriptedChunks[2];
+    expect(chunk1).toBeDefined();
+    expect(chunk3).toBeDefined();
+
+    state = ingestTranscriptChunk(state, {
+      speaker: "caller",
+      text: chunk1?.text ?? "",
+      coercionScoreDelta: 0,
+      flaggedTactics: [],
+    });
+    state = ingestTranscriptChunk(state, {
+      speaker: "caller",
+      text: chunk3?.text ?? "",
+      coercionScoreDelta: 0,
+      flaggedTactics: [],
+    });
+
+    expect(state.call.detection.algorithm.score).toBeLessThan(30);
+    expect(state.mode).toBe("normal");
+
+    const afterAi = applyAiDetection(state, {
+      aiScore: 91,
+      tactics: ["euphemism_coercion", "secrecy_pressure"],
+      reasoning: "Stealth euphemism transfer direction caught by AI.",
+      source: "ai",
+    });
+
+    expect(afterAi.mode).toBe("mirage");
+    expect(afterAi.call.detection.combinedScore).toBeGreaterThanOrEqual(
+      COERCION_ACTIVATION_THRESHOLD,
+    );
   });
 });

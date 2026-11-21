@@ -192,4 +192,24 @@ describe("Pre-Transfer Gate, Post-Call Cooldown & Double-Tap Idempotency", () =>
     expect(tA.deduplicated || tB.deduplicated).toBe(true);
     expect(store.getState().realAccounts[0]?.balance).toBe(24000);
   });
+
+  test("lists all 4 ordered presets and switches active preset on reset", async () => {
+    const store = createTestStore();
+    const caller = createCallerFactory(appRouter)({ store });
+
+    const presets = await caller.mirage.presets();
+    expect(presets.map((p) => p.id)).toEqual([
+      "bank-refund-trap",
+      "stealth-euphemism-scam",
+      "uae-du-kyc",
+      "legit-control-call",
+    ]);
+
+    await caller.mirage.setLocale({ locale: "ru" });
+    const switched = await caller.mirage.reset({ presetId: "legit-control-call" });
+    expect(switched.preset.id).toBe("legit-control-call");
+    expect(switched.state.presetId).toBe("legit-control-call");
+    expect(switched.state.locale).toBe("ru");
+    expect(switched.state.call.detection.signals.unverifiedCaller).toBe(false);
+  });
 });

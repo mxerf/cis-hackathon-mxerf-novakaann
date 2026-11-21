@@ -2,6 +2,8 @@ import type { Locale } from "../../shared/mirage-types.ts";
 
 export type UiCopy = {
   presenterTag: string;
+  caseTag: string;
+  startCall: string;
   startDemo: string;
   startingDemo: string;
   nextScamLine: string;
@@ -22,6 +24,28 @@ export type UiCopy = {
   panelWaiting: string;
   panelModeMirage: string;
   panelModeMonitoring: string;
+  panelModeStandby: string;
+  caseBadgeScam: string;
+  caseBadgeSafe: string;
+  fraudProbabilityLabel: string;
+  riskLow: string;
+  riskElevated: string;
+  riskMirageEngaged: string;
+  thresholdNotchLabel: string;
+  aiAnalyzingBadge: string;
+  osSignalsLabel: string;
+  toggleCallActive: string;
+  toggleCallCooldown: string;
+  toggleUnverifiedCaller: string;
+  toggleScreenShare: string;
+  toggleIbanPasted: string;
+  cueDeckTitle: string;
+  cuePlayNext: string;
+  cueAllPlayed: string;
+  cueScreenTag: string;
+  cueLivePlaceholder: string;
+  transcriptIdleHint: string;
+  safeControlLedgerNote: string;
   signalCallActive: string;
   signalCallStillActive: string;
   signalCallCooldown: string;
@@ -205,11 +229,13 @@ export type UiCopy = {
 
 const EN_COPY: UiCopy = {
   presenterTag: "Presenter",
+  caseTag: "Case",
+  startCall: "Start Call",
   startDemo: "Start demo",
   startingDemo: "Starting…",
   nextScamLine: "Next scam line",
   allLinesPlayed: "All lines played",
-  endCall: "End call",
+  endCall: "End Call",
   stopSharing: "Stop sharing",
   shareScreen: "Share screen",
   reset: "Reset",
@@ -221,10 +247,32 @@ const EN_COPY: UiCopy = {
   connectingLabel: "Connecting to Mirage…",
 
   panelBrand: "Mirage",
-  panelSubtitle: "private bank view",
+  panelSubtitle: "real-time risk engine",
   panelWaiting: "Waiting for a call",
   panelModeMirage: "MIRAGE ACTIVE",
   panelModeMonitoring: "MONITORING",
+  panelModeStandby: "STANDBY",
+  caseBadgeScam: "SCAM SCENARIO",
+  caseBadgeSafe: "SAFE CONTROL",
+  fraudProbabilityLabel: "Fraud probability",
+  riskLow: "Low risk",
+  riskElevated: "Elevated",
+  riskMirageEngaged: "Mirage engaged",
+  thresholdNotchLabel: "65% MIRAGE",
+  aiAnalyzingBadge: "ANALYZING…",
+  osSignalsLabel: "OS signals",
+  toggleCallActive: "Call Active",
+  toggleCallCooldown: "Cooldown",
+  toggleUnverifiedCaller: "Unverified Caller",
+  toggleScreenShare: "Screen Share",
+  toggleIbanPasted: "IBAN Pasted",
+  cueDeckTitle: "Case cue deck",
+  cuePlayNext: "Play next",
+  cueAllPlayed: "All played",
+  cueScreenTag: "+Screen",
+  cueLivePlaceholder: "Test any custom phrase live…",
+  transcriptIdleHint: "Click any cue above or toggle OS flags to stream live risk signals…",
+  safeControlLedgerNote: "Control scenario — real ledger settles normally with zero friction.",
   signalCallActive: "Call active",
   signalCallStillActive: "Call still active",
   signalCallCooldown: "Call ended · Cooldown",
@@ -242,7 +290,7 @@ const EN_COPY: UiCopy = {
   tier1Title: "Tier 1 · Algorithm (<1ms)",
   tier1Waiting: "Monitoring OS flags & reversal syntax…",
   tier2Title: "Tier 2 · AI Semantic",
-  sourceAi: "Haiku 5.5 · AI",
+  sourceAi: "AI LIVE",
   sourceScripted: "SCRIPTED",
   sourceFallback: "FALLBACK",
   sourceStandby: "STANDBY",
@@ -412,6 +460,8 @@ const EN_COPY: UiCopy = {
 
 const RU_COPY: UiCopy = {
   presenterTag: "Сцена",
+  caseTag: "Кейс",
+  startCall: "Начать звонок",
   startDemo: "Старт демо",
   startingDemo: "Запуск…",
   nextScamLine: "След. реплика",
@@ -421,17 +471,39 @@ const RU_COPY: UiCopy = {
   shareScreen: "Показ экрана",
   reset: "Сброс",
   liveHaikuLabel: "Живой Haiku 5.5",
-  callerVoiceLabel: "Голос звонящего",
+  callerVoiceLabel: "Голос",
   mobileLink: "/mobile",
   wsLive: "WS активен",
   wsOffline: "Офлайн",
   connectingLabel: "Подключение к Mirage…",
 
   panelBrand: "Mirage",
-  panelSubtitle: "закрытый контур банка",
+  panelSubtitle: "реалтайм-антифрод",
   panelWaiting: "Ожидание входящего звонка",
   panelModeMirage: "МИРАЖ АКТИВЕН",
   panelModeMonitoring: "МОНИТОРИНГ",
+  panelModeStandby: "ОЖИДАНИЕ",
+  caseBadgeScam: "СЦЕНАРИЙ СКАМА",
+  caseBadgeSafe: "ЧИСТЫЙ КОНТРОЛЬ",
+  fraudProbabilityLabel: "Вероятность фрода",
+  riskLow: "Низкий риск",
+  riskElevated: "Повышенный",
+  riskMirageEngaged: "Мираж включён",
+  thresholdNotchLabel: "65% МИРАЖ",
+  aiAnalyzingBadge: "АНАЛИЗ…",
+  osSignalsLabel: "Сигналы ОС",
+  toggleCallActive: "Звонок активен",
+  toggleCallCooldown: "Cooldown",
+  toggleUnverifiedCaller: "Неподтв. номер",
+  toggleScreenShare: "Показ экрана",
+  toggleIbanPasted: "Вставка IBAN",
+  cueDeckTitle: "Реплики кейса",
+  cuePlayNext: "След. фраза",
+  cueAllPlayed: "Все сыграны",
+  cueScreenTag: "+Экран",
+  cueLivePlaceholder: "Проверить любую живую фразу…",
+  transcriptIdleHint: "Нажмите на фразу выше или тумблер сигнала ОС для расчёта риска…",
+  safeControlLedgerNote: "Контрольный кейс — реальные переводы проходят без ложных блокировок.",
   signalCallActive: "Идёт звонок",
   signalCallStillActive: "Звонок ещё активен",
   signalCallCooldown: "Звонок завершён · Cooldown",
@@ -449,7 +521,7 @@ const RU_COPY: UiCopy = {
   tier1Title: "Уровень 1 · Алгоритм (<1мс)",
   tier1Waiting: "Мониторинг флагов ОС и конструкций…",
   tier2Title: "Уровень 2 · AI Семантика",
-  sourceAi: "Haiku 5.5 · AI",
+  sourceAi: "AI LIVE",
   sourceScripted: "СКРИПТ",
   sourceFallback: "ФОЛБЭК",
   sourceStandby: "ОЖИДАНИЕ",

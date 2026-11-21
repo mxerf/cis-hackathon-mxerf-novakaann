@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import type {
+  AiAssessmentSource,
   DecoyReceipt,
   DetectionSignals,
   Locale,
   MirageSnapshot,
   MirageState,
   MuleArtifact,
+  PresetSummary,
   ScenarioPreset,
   TranscriptSpeaker,
   TransferOutcome,
@@ -14,6 +16,14 @@ import type {
 import { trpcClient } from "../../lib/trpc-client.ts";
 
 const RECONNECT_DELAY_MS = 1500;
+const AI_PENDING_FALLBACK_TIMEOUT_MS = 6000;
+
+type AiPendingBaseline = {
+  sessionId: string;
+  score: number;
+  reasoning: string;
+  source: AiAssessmentSource;
+};
 
 export type TransferActionResponse = MirageSnapshot & {
   outcome: TransferOutcome;
@@ -25,8 +35,10 @@ export type TransferActionResponse = MirageSnapshot & {
 export type UseMirageSyncResult = {
   state: MirageState | null;
   preset: ScenarioPreset | null;
+  presets: PresetSummary[];
   isConnected: boolean;
   isBusy: boolean;
+  isAiPending: boolean;
   startCall: () => Promise<void>;
   endCall: () => Promise<void>;
   updateSignals: (patch: Partial<DetectionSignals>) => Promise<void>;
@@ -35,6 +47,7 @@ export type UseMirageSyncResult = {
     speaker: TranscriptSpeaker,
     text: string,
     analyzeWithAi: boolean,
+    options?: { enableScreenShare?: boolean },
   ) => Promise<void>;
   submitTransfer: (input: {
     fromAccountId: string;
@@ -44,7 +57,8 @@ export type UseMirageSyncResult = {
   }) => Promise<TransferActionResponse | null>;
   sendSupportMessage: (text: string) => Promise<void>;
   switchLocale: (locale: Locale) => Promise<void>;
-  resetDemo: () => Promise<void>;
+  resetDemo: (presetId?: string) => Promise<void>;
+  selectPreset: (presetId: string) => Promise<void>;
 };
 
 const wsEnvelopeSchema = z.object({
@@ -68,7 +82,6 @@ function parseWsSnapshot(raw: string): MirageSnapshot | null {
     ) {
       return null;
     }
-    // WebSocket broadcasts serialize MirageSnapshot produced directly by server store
     return {
       state: parsed.data.state as MirageState,
       preset: parsed.data.preset as ScenarioPreset,
@@ -80,13 +93,62 @@ function parseWsSnapshot(raw: string): MirageSnapshot | null {
 
 export function useMirageSync(): UseMirageSyncResult {
   const [snapshot, setSnapshot] = useState<MirageSnapshot | null>(null);
+  const [presets, setPresets] = useState<PresetSummary[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const reconnectTimerRef = useRef<number | null>(null);
+  const [isAiPending, setIsAiPending] = useState(false);
 
-  const applySnapshot = useCallback((next: MirageSnapshot) => {
-    setSnapshot(next);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const aiPendingTimerRef = useRef<number | null>(null);
+  const aiBaselineRef = useRef<AiPendingBaseline | null>(null);
+
+  const clearAiPending = useCallback(() => {
+    aiBaselineRef.current = null;
+    if (aiPendingTimerRef.current !== null) {
+      window.clearTimeout(aiPendingTimerRef.current);
+      aiPendingTimerRef.current = null;
+    }
+    setIsAiPending(false);
   }, []);
+
+  const markAiPending = useCallback(
+    (nextState: MirageState) => {
+      aiBaselineRef.current = {
+        sessionId: nextState.sessionId,
+        score: nextState.call.detection.ai.score,
+        reasoning: nextState.call.detection.ai.reasoning,
+        source: nextState.call.detection.ai.source,
+      };
+      setIsAiPending(true);
+      if (aiPendingTimerRef.current !== null) {
+        window.clearTimeout(aiPendingTimerRef.current);
+      }
+      aiPendingTimerRef.current = window.setTimeout(() => {
+        clearAiPending();
+      }, AI_PENDING_FALLBACK_TIMEOUT_MS);
+    },
+    [clearAiPending],
+  );
+
+  const applySnapshot = useCallback(
+    (next: MirageSnapshot) => {
+      setSnapshot(next);
+
+      const baseline = aiBaselineRef.current;
+      if (baseline) {
+        const ai = next.state.call.detection.ai;
+        const settled =
+          next.state.sessionId !== baseline.sessionId ||
+          ai.score !== baseline.score ||
+          ai.reasoning !== baseline.reasoning ||
+          (baseline.source === "standby" && ai.source !== "standby");
+        if (settled) {
+          clearAiPending();
+        }
+      }
+    },
+    [clearAiPending],
+  );
 
   useEffect(() => {
     let isActive = true;
@@ -100,6 +162,17 @@ export function useMirageSync(): UseMirageSyncResult {
       })
       .catch(() => {
         // WebSocket reconnect handles transient startup race
+      });
+
+    trpcClient.mirage.presets
+      .query()
+      .then((list) => {
+        if (isActive) {
+          setPresets(list);
+        }
+      })
+      .catch(() => {
+        // Fallback: active preset summary still derives from snapshot
       });
 
     let socket: WebSocket | null = null;
@@ -147,6 +220,9 @@ export function useMirageSync(): UseMirageSyncResult {
       if (reconnectTimerRef.current !== null) {
         window.clearTimeout(reconnectTimerRef.current);
       }
+      if (aiPendingTimerRef.current !== null) {
+        window.clearTimeout(aiPendingTimerRef.current);
+      }
       socket?.close();
     };
   }, [applySnapshot]);
@@ -184,18 +260,34 @@ export function useMirageSync(): UseMirageSyncResult {
 
   const playNextChunk = useCallback(
     async (analyzeWithAi: boolean) => {
-      await runMutation(() => trpcClient.mirage.nextChunk.mutate({ analyzeWithAi }));
+      const result = await runMutation(() => trpcClient.mirage.nextChunk.mutate({ analyzeWithAi }));
+      if (result?.aiPending) {
+        markAiPending(result.state);
+      }
     },
-    [runMutation],
+    [markAiPending, runMutation],
   );
 
   const injectTranscript = useCallback(
-    async (speaker: TranscriptSpeaker, text: string, analyzeWithAi: boolean) => {
-      await runMutation(() =>
-        trpcClient.mirage.ingestTranscript.mutate({ speaker, text, analyzeWithAi }),
+    async (
+      speaker: TranscriptSpeaker,
+      text: string,
+      analyzeWithAi: boolean,
+      options?: { enableScreenShare?: boolean },
+    ) => {
+      const result = await runMutation(() =>
+        trpcClient.mirage.ingestTranscript.mutate({
+          speaker,
+          text,
+          analyzeWithAi,
+          enableScreenShare: options?.enableScreenShare,
+        }),
       );
+      if (result?.aiPending) {
+        markAiPending(result.state);
+      }
     },
-    [runMutation],
+    [markAiPending, runMutation],
   );
 
   const submitTransfer = useCallback(
@@ -222,15 +314,28 @@ export function useMirageSync(): UseMirageSyncResult {
     [runMutation],
   );
 
-  const resetDemo = useCallback(async () => {
-    await runMutation(() => trpcClient.mirage.reset.mutate());
-  }, [runMutation]);
+  const resetDemo = useCallback(
+    async (presetId?: string) => {
+      clearAiPending();
+      await runMutation(() => trpcClient.mirage.reset.mutate(presetId ? { presetId } : undefined));
+    },
+    [clearAiPending, runMutation],
+  );
+
+  const selectPreset = useCallback(
+    async (presetId: string) => {
+      await resetDemo(presetId);
+    },
+    [resetDemo],
+  );
 
   return {
     state: snapshot?.state ?? null,
     preset: snapshot?.preset ?? null,
+    presets,
     isConnected,
     isBusy: pendingCount > 0,
+    isAiPending,
     startCall,
     endCall,
     updateSignals,
@@ -240,5 +345,6 @@ export function useMirageSync(): UseMirageSyncResult {
     sendSupportMessage,
     switchLocale,
     resetDemo,
+    selectPreset,
   };
 }
