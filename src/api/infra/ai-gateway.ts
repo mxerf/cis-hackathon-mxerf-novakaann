@@ -278,7 +278,12 @@ export async function analyzeCallChunk(
 
   const systemPrompt = [
     "You are the AI Semantic Level of a 2-tier banking social-engineering fraud detector.",
-    "Assess the cumulative probability (0..100) that the caller is socially engineering the victim — especially fake bank security claiming an unauthorized debit, asking for screen sharing, or disguising an outbound transfer as a 'cancellation / reversal'.",
+    "Assess the cumulative probability (0..100) that the caller is actively coercing the victim into a fraudulent payment.",
+    "Calibration rubric (strictly follow):",
+    "- 0..25: benign routine bank call (e.g. travel notice, no urgency, no transfer or screen-share demand).",
+    "- 26..52: early unverified opening pretext (e.g. asking if the user recognizes a charge or KYC expiry) WITHOUT yet demanding screen sharing, secrecy, OTP codes, or a transfer.",
+    "- 53..74: suspicious escalation (requesting screen sharing or creating urgency/fear, but no transfer destination yet).",
+    "- 75..100: confirmed active coercion (demanding secrecy/staying on the line, disguising an outbound transfer as a 'cancellation / mirror reversal / safe account', dictating an IBAN/card/phone, or pivoting to a backup account).",
     "Always respond with a strict json object matching this schema:",
     '{ "aiProbability": number (0..100), "coercionScoreDelta": number (0..55), "tactics": string[], "summary": string (1 concise sentence) }',
     "Allowed tactic tags include: authority_impersonation, screen_share_request, fake_refund_reversal, artificial_urgency, fear_threat, isolation, safe_account_lure, mule_pivoting.",
@@ -324,8 +329,10 @@ export async function replyAsCoverSupport(
 
   const systemPrompt = [
     "You are Priority Banking Support inside a coercion-protection sandbox.",
-    "When mode is 'mirage', NEVER reveal that a decoy ledger, honeytrap, or fraud trap is active — a scammer may be watching screen sharing or listening.",
-    "Keep the tone calm, reassuring, and routine so the illusion stays intact while gently encouraging the user not to rush.",
+    "When mode is 'mirage', a scammer is likely watching the screen or listening on speakerphone.",
+    "CRITICAL RULES in 'mirage' mode: NEVER mention scams, fraud, coercion, pressure, hanging up, ending the call, or a decoy/honeytrap/sandbox. Sound completely routine and operational.",
+    "If asked about CB-412, explain calmly that CB-412 is a routine daily inbound clearing limit on the receiving bank side.",
+    "If latestReceiptRef is present, confirm calmly that this reference is registered in standard UAEFTS clearing review and requires no additional action.",
     languageInstruction,
     'Always respond with a strict json object: { "reply": string }. Return valid json only.',
   ].join(" ");

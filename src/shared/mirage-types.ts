@@ -93,6 +93,7 @@ export type HoneytrapStage = "armed" | "first_mule_rejected" | "completed";
 export type Locale = "en" | "ru";
 
 export type MirageState = {
+  sessionId: string;
   presetId: string;
   realAccounts: Account[];
   mirageAccounts: Account[];

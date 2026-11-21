@@ -13,37 +13,37 @@ const KEYWORD_RULES: readonly RuleEntry[] = [
     tag: "kw:suspicious_debit",
     weight: 10,
     pattern:
-      /\b(suspicious debit|unauthorized transaction|unauthorized debit|unusual charge|подозрительн\w+\s+(?:операц|списан)|несанкционирован\w+)/i,
+      /(?:^|[^\p{L}\p{N}_])(suspicious debit|unauthorized transaction|unauthorized debit|unusual charge|pending charge|подозрительн\p{L}+\s+(?:операц\p{L}*|списан\p{L}*|перевод\p{L}*)|несанкционирован\p{L}+|оформляют\s+кредит)/iu,
   },
   {
     tag: "kw:screen_share",
     weight: 10,
     pattern:
-      /\b(screen\s*shar\w*|share your screen|show your screen|broadcast screen|демонстрац\w+\s+экран\w*|покаж\w+\s+экран)/i,
+      /(?:^|[^\p{L}\p{N}_])(screen\s*shar\p{L}*|share your screen|show your screen|broadcast screen|демонстрац\p{L}+\s+экран\p{L}*|покаж\p{L}+\s+экран|показ\p{L}*\s+экран\p{L}*)/iu,
   },
   {
     tag: "kw:safe_or_transit_account",
     weight: 16,
     pattern:
-      /\b(safe[- ]?custody|safe account|transit account|reversal account|mirror transfer|clearing account|escrow|безопасн\w+\s+сч[её]т|транзитн\w+\s+сч[её]т|зеркальн\w+)/i,
+      /(?:^|[^\p{L}\p{N}_])(safe[- ]?custody|safe account|transit account|reversal account|mirror transfer|clearing account|escrow|безопасн\p{L}+\s+сч[её]т|транзитн\p{L}+\s+сч[её]т|техническ\p{L}+\s+сч[её]т|зеркальн\p{L}+)/iu,
   },
   {
     tag: "kw:authority_claim",
     weight: 8,
     pattern:
-      /\b(fraud prevention|security desk|central bank|compliance officer|regulatory|служба безопасности|отдел мониторинга|центробанк)/i,
+      /(?:^|[^\p{L}\p{N}_])(fraud prevention|security desk|central bank|compliance officer|regulatory|служб\p{L}\s+безопасности|отдел\p{L}*\s+мониторинга|финмониторинг\p{L}*|центробанк\p{L}*)/iu,
   },
   {
     tag: "kw:call_isolation",
     weight: 14,
     pattern:
-      /\b(do not hang up|don't hang up|stay on (?:this|the) line|do not call anyone|keep me on speaker|не кладите трубку|оставайтесь на линии|никому не говор\w+)/i,
+      /(?:^|[^\p{L}\p{N}_])(do not hang up|don't hang up|stay on (?:this|the) line|do not call anyone|keep me on speaker|не кладите трубку|оставайтесь на линии|никому не говор\p{L}+|никому не сообщ\p{L}+)/iu,
   },
   {
     tag: "kw:iban_or_account_dictation",
     weight: 10,
     pattern:
-      /\b(AE\d{2}[A-Z0-9]{10,25}|iban|beneficiary account|backup clearing|резервн\w+\s+сч[её]т)/i,
+      /(?:^|[^\p{L}\p{N}_])(AE\d{2}[A-Z0-9]{10,25}|iban|beneficiary account|backup clearing|резервн\p{L}+\s+сч[её]т|резервн\p{L}+\s+карт\p{L}*)/iu,
   },
 ];
 
@@ -52,19 +52,19 @@ const CONSTRUCTION_RULES: readonly RuleEntry[] = [
     tag: "SYNTAX:SCREEN_ASSIST_PRETEXT",
     weight: 12,
     pattern:
-      /(?:(?:share|show|turn on).{0,35}screen.{0,45}(?:cancel|stop|help|verify|guide)|(?:cancel|stop|reverse).{0,45}(?:share|show).{0,25}screen|(?:включ|покаж)\w*.{0,30}экран.{0,45}(?:отмен|помог|останов))/i,
+      /(?:(?:share|show|turn on).{0,35}screen.{0,45}(?:cancel|stop|help|verify|guide)|(?:cancel|stop|reverse).{0,45}(?:share|show).{0,25}screen|(?:включ|покаж)\p{L}*.{0,30}экран.{0,45}(?:отмен|помог|останов))/iu,
   },
   {
     tag: "SYNTAX:FAKE_REVERSAL_PARADOX",
     weight: 24,
     pattern:
-      /(?:(?:cancel|reverse|stop|block|clear).{0,80}(?:transfer|submit|send|confirm|move).{0,60}(?:iban|account|aed|balance)|(?:transfer|send|submit).{0,70}(?:to cancel|for cancellation|reversal|mirror)|(?:отмен|останов|верн)\w*.{0,70}(?:перевед|перевод|подтверд|отправ))/i,
+      /(?:(?:cancel|reverse|stop|block|clear).{0,80}(?:transfer|submit|send|confirm|move).{0,60}(?:iban|account|aed|balance)|(?:transfer|send|submit).{0,70}(?:to cancel|for cancellation|reversal|mirror)|(?:отмен|останов|верн|аннулир)\p{L}*.{0,70}(?:перевед|перевод|подтверд|отправ)|(?:перевед|перевод|отправ)\p{L}*.{0,70}(?:для отмен|чтобы отмен|зеркальн|аннулир))/iu,
   },
   {
     tag: "SYNTAX:TIME_CUTOFF_PRESSURE",
     weight: 10,
     pattern:
-      /(?:(?:within|in|before).{0,20}\d+\s*(?:min|minute|sec)|immediately|right now.{0,35}(?:or|before|unless)|прямо сейчас|в течение\s+\d+\s*мин)/i,
+      /(?:(?:within|in|before).{0,20}\d+\s*(?:min|minute|sec)|immediately|right now.{0,35}(?:or|before|unless)|прямо сейчас|в течение\s+\d+\s*мин|через\s+\d+\s*мин)/iu,
   },
 ];
 

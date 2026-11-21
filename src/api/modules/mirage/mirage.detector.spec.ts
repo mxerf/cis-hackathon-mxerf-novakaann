@@ -58,4 +58,67 @@ describe("2-Tier Antifraud Detector — Algorithm Level & Ensemble", () => {
     expect(combineDetectionScores(55, 58)).toBe(70);
     expect(combineDetectionScores(20, 35)).toBe(35);
   });
+
+  test("detects Russian social-engineering keywords and syntactic constructions with Unicode boundaries", () => {
+    const result = evaluateAlgorithmLevel({
+      callActive: true,
+      signals: {
+        unverifiedCaller: true,
+        screenSharing: true,
+        clipboardPasteDetected: false,
+      },
+      transcript: [
+        {
+          id: "ru-1",
+          speaker: "caller",
+          text: "Здравствуйте, служба безопасности банка. Зафиксировано подозрительное списание. Включите демонстрацию экрана, чтобы мы помогли отменить операцию.",
+          timestamp: "2026-11-21T10:00:00.000Z",
+          flaggedTactics: [],
+        },
+        {
+          id: "ru-2",
+          speaker: "caller",
+          text: "Не кладите трубку и никому не говорите! Чтобы отменить списание прямо сейчас, переведите средства на безопасный счёт AE070331234567890123456.",
+          timestamp: "2026-11-21T10:00:25.000Z",
+          flaggedTactics: [],
+        },
+      ],
+    });
+
+    expect(result.matchedKeywords).toContain("kw:authority_claim");
+    expect(result.matchedKeywords).toContain("kw:suspicious_debit");
+    expect(result.matchedKeywords).toContain("kw:screen_share");
+    expect(result.matchedKeywords).toContain("kw:call_isolation");
+    expect(result.matchedKeywords).toContain("kw:safe_or_transit_account");
+    expect(result.matchedKeywords).toContain("kw:iban_or_account_dictation");
+    expect(result.matchedConstructions).toContain("SYNTAX:SCREEN_ASSIST_PRETEXT");
+    expect(result.matchedConstructions).toContain("SYNTAX:FAKE_REVERSAL_PARADOX");
+    expect(result.matchedConstructions).toContain("SYNTAX:TIME_CUTOFF_PRESSURE");
+    expect(result.score).toBe(100);
+  });
+
+  test("keeps score low for a benign bank travel-notice call", () => {
+    const result = evaluateAlgorithmLevel({
+      callActive: true,
+      signals: {
+        unverifiedCaller: false,
+        screenSharing: false,
+        clipboardPasteDetected: false,
+      },
+      transcript: [
+        {
+          id: "ok-1",
+          speaker: "caller",
+          text: "Good afternoon, we are confirming whether you plan to travel to Europe this week so your card works smoothly. You do not need to share any codes or make any payments.",
+          timestamp: "2026-11-21T10:00:00.000Z",
+          flaggedTactics: [],
+        },
+      ],
+    });
+
+    expect(result.activeFlags).toHaveLength(0);
+    expect(result.matchedKeywords).toHaveLength(0);
+    expect(result.matchedConstructions).toHaveLength(0);
+    expect(result.score).toBe(0);
+  });
 });

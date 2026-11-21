@@ -52,7 +52,8 @@ export async function ingestCallTranscript({
   ctx,
   input,
 }: PublicResolverOptions & { input: IngestTranscriptSchemaInput }) {
-  let current = ctx.store.getState();
+  const initial = ctx.store.getState();
+  const startSessionId = initial.sessionId;
   const { speaker, text, analyzeWithAi } = input;
   let delta = input.coercionScoreDelta;
   let tactics = input.flaggedTactics;
@@ -63,10 +64,10 @@ export async function ingestCallTranscript({
   if (delta === undefined || tactics === undefined) {
     if (speaker === "caller" && analyzeWithAi) {
       const analysis = await analyzeCallChunk(text, {
-        previousTranscript: current.call.transcript.map(
+        previousTranscript: initial.call.transcript.map(
           (entry) => `${entry.speaker}: ${entry.text}`,
         ),
-        screenSharing: current.call.detection.signals.screenSharing,
+        screenSharing: initial.call.detection.signals.screenSharing,
       });
       delta = delta ?? analysis.coercionScoreDelta;
       tactics = tactics ?? analysis.tactics;
@@ -79,11 +80,25 @@ export async function ingestCallTranscript({
     }
   }
 
-  if (!current.call.active) {
-    current = startCall(current);
+  let latest = ctx.store.getState();
+  if (latest.sessionId !== startSessionId) {
+    return {
+      ...ctx.store.getSnapshot(),
+      analysis: {
+        aiProbability: aiScore,
+        coercionScoreDelta: delta,
+        tactics,
+        summary: analysisSummary,
+        source: analysisSource,
+      },
+    };
   }
 
-  const next = ingestTranscriptChunk(current, {
+  if (!latest.call.active) {
+    latest = startCall(latest);
+  }
+
+  const next = ingestTranscriptChunk(latest, {
     speaker,
     text,
     coercionScoreDelta: delta,
@@ -110,10 +125,12 @@ export async function advanceCallScript({
   ctx,
   input,
 }: PublicResolverOptions & { input: NextChunkSchemaInput }) {
-  const current = ctx.store.getState();
+  const initial = ctx.store.getState();
+  const startSessionId = initial.sessionId;
+  const startChunkIndex = initial.scriptedChunkIndex;
   const analyzeWithAi = input?.analyzeWithAi ?? false;
-  const preset = getPresetById(current.presetId);
-  const upcomingChunk = preset.scriptedChunks[current.scriptedChunkIndex];
+  const preset = getPresetById(initial.presetId);
+  const upcomingChunk = preset.scriptedChunks[startChunkIndex];
 
   if (!upcomingChunk) {
     return { ...ctx.store.getSnapshot(), exhausted: true };
@@ -131,9 +148,9 @@ export async function advanceCallScript({
 
   if (analyzeWithAi && upcomingChunk.speaker === "caller") {
     const analysis = await analyzeCallChunk(upcomingChunk.text, {
-      previousTranscript: current.call.transcript.map((entry) => `${entry.speaker}: ${entry.text}`),
+      previousTranscript: initial.call.transcript.map((entry) => `${entry.speaker}: ${entry.text}`),
       screenSharing:
-        upcomingChunk.autoEnableScreenShare || current.call.detection.signals.screenSharing,
+        upcomingChunk.autoEnableScreenShare || initial.call.detection.signals.screenSharing,
     });
     analysisOverride = {
       coercionScoreDelta: Math.max(upcomingChunk.coercionScoreDelta, analysis.coercionScoreDelta),
@@ -144,7 +161,15 @@ export async function advanceCallScript({
     };
   }
 
-  const next = advanceScriptedChunk(current, preset, new Date().toISOString(), analysisOverride);
+  const latest = ctx.store.getState();
+  if (latest.sessionId !== startSessionId || latest.scriptedChunkIndex !== startChunkIndex) {
+    return {
+      ...ctx.store.getSnapshot(),
+      exhausted: latest.scriptedChunkIndex >= preset.scriptedChunks.length,
+    };
+  }
+
+  const next = advanceScriptedChunk(latest, preset, new Date().toISOString(), analysisOverride);
   const saved = ctx.store.setState(next);
 
   return {
@@ -188,7 +213,9 @@ export async function sendSupport({
   ctx,
   input,
 }: PublicResolverOptions & { input: SendSupportSchemaInput }) {
-  const withUserMsg = appendSupportMessage(ctx.store.getState(), "user", input.text);
+  const initial = ctx.store.getState();
+  const startSessionId = initial.sessionId;
+  const withUserMsg = appendSupportMessage(initial, "user", input.text);
   ctx.store.setState(withUserMsg);
 
   const replyResult = await replyAsCoverSupport(input.text, {
@@ -201,7 +228,16 @@ export async function sendSupport({
     latestReceiptRef: withUserMsg.receipts[0]?.refCode,
   });
 
-  const withAgentReply = appendSupportMessage(withUserMsg, "agent", replyResult.reply);
+  const latest = ctx.store.getState();
+  if (latest.sessionId !== startSessionId) {
+    return {
+      reply: replyResult.reply,
+      source: replyResult.source,
+      ...ctx.store.getSnapshot(),
+    };
+  }
+
+  const withAgentReply = appendSupportMessage(latest, "agent", replyResult.reply);
   const saved = ctx.store.setState(withAgentReply);
 
   return {

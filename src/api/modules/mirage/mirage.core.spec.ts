@@ -6,6 +6,8 @@ import {
   detectMuleKind,
   getVisibleAccounts,
   ingestTranscriptChunk,
+  resetState,
+  setLocale,
   startCall,
   submitTransfer,
 } from "./mirage.core.ts";
@@ -199,5 +201,17 @@ describe("Mirage coercion shield core", () => {
     expect(detectMuleKind("AE070331234567890123456")).toBe("iban");
     expect(detectMuleKind("4532-1900-8821-7742")).toBe("card");
     expect(detectMuleKind("+971 55 842 9104")).toBe("phone");
+  });
+
+  test("resetState rotates sessionId and setLocale translates standby greeting and reasoning", () => {
+    const initial = createInitialState(BANK_REFUND_TRAP_PRESET, "en");
+    const localized = setLocale(initial, "ru");
+
+    expect(localized.locale).toBe("ru");
+    expect(localized.supportMessages[0]?.text).toContain("Здравствуйте");
+    expect(localized.call.detection.ai.reasoning).toContain("Ожидание");
+
+    const fresh = resetState(BANK_REFUND_TRAP_PRESET, "ru");
+    expect(fresh.sessionId).not.toBe(initial.sessionId);
   });
 });

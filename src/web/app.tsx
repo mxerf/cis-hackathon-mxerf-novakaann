@@ -49,6 +49,7 @@ export function App() {
       <div className="min-h-screen bg-white">
         <div className="mx-auto min-h-screen max-w-md shadow-sm">
           <MobileWallet
+            key={state.sessionId}
             state={state}
             preset={preset}
             isBusy={isBusy}
@@ -161,6 +162,7 @@ export function App() {
         <div className="lg:sticky lg:top-6">
           <PhoneFrame>
             <MobileWallet
+              key={state.sessionId}
               state={state}
               preset={preset}
               isBusy={isBusy}

@@ -93,6 +93,12 @@ function maybeEngageMirage(state: MirageState, nextCall: CallSession): MirageSta
   };
 }
 
+function getStandbyReasoning(locale: Locale): string {
+  return locale === "ru"
+    ? "Ожидание голосового потока для семантической оценки…"
+    : "Standby — awaiting live call speech for semantic evaluation…";
+}
+
 export function createInitialState(
   preset: ScenarioPreset = DEFAULT_PRESET,
   locale: Locale = "en",
@@ -110,10 +116,7 @@ export function createInitialState(
   const initialAi: AiDetection = {
     score: 0,
     tactics: [],
-    reasoning:
-      locale === "ru"
-        ? "Ожидание голосового потока для семантической оценки…"
-        : "Standby — awaiting live call speech for semantic evaluation…",
+    reasoning: getStandbyReasoning(locale),
     source: "standby",
   };
 
@@ -138,6 +141,7 @@ export function createInitialState(
   };
 
   return {
+    sessionId: crypto.randomUUID(),
     presetId: preset.id,
     realAccounts,
     mirageAccounts,
@@ -477,9 +481,35 @@ export function appendSupportMessage(
 }
 
 export function setLocale(state: MirageState, locale: Locale): MirageState {
+  const preset = getPresetById(state.presetId);
+  const firstSupport = state.supportMessages[0];
+  const shouldTranslateWelcome =
+    state.supportMessages.length === 1 && firstSupport?.id === "support-welcome";
+
+  const nextSupportMessages =
+    shouldTranslateWelcome && firstSupport
+      ? [{ ...firstSupport, text: preset.initialSupportGreeting[locale] }]
+      : state.supportMessages;
+
+  const nextCall =
+    state.call.detection.ai.source === "standby"
+      ? {
+          ...state.call,
+          detection: {
+            ...state.call.detection,
+            ai: {
+              ...state.call.detection.ai,
+              reasoning: getStandbyReasoning(locale),
+            },
+          },
+        }
+      : state.call;
+
   return {
     ...state,
     locale,
+    call: nextCall,
+    supportMessages: nextSupportMessages,
   };
 }
 

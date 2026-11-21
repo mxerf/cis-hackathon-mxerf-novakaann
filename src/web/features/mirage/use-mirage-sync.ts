@@ -81,7 +81,7 @@ function parseWsSnapshot(raw: string): MirageSnapshot | null {
 export function useMirageSync(): UseMirageSyncResult {
   const [snapshot, setSnapshot] = useState<MirageSnapshot | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [isBusy, setIsBusy] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const reconnectTimerRef = useRef<number | null>(null);
 
   const applySnapshot = useCallback((next: MirageSnapshot) => {
@@ -153,7 +153,7 @@ export function useMirageSync(): UseMirageSyncResult {
 
   const runMutation = useCallback(
     async <T extends MirageSnapshot>(fn: () => Promise<T>): Promise<T | null> => {
-      setIsBusy(true);
+      setPendingCount((count) => count + 1);
       try {
         const result = await fn();
         applySnapshot({ state: result.state, preset: result.preset });
@@ -161,7 +161,7 @@ export function useMirageSync(): UseMirageSyncResult {
       } catch {
         return null;
       } finally {
-        setIsBusy(false);
+        setPendingCount((count) => Math.max(0, count - 1));
       }
     },
     [applySnapshot],
@@ -230,7 +230,7 @@ export function useMirageSync(): UseMirageSyncResult {
     state: snapshot?.state ?? null,
     preset: snapshot?.preset ?? null,
     isConnected,
-    isBusy,
+    isBusy: pendingCount > 0,
     startCall,
     endCall,
     updateSignals,
